@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import httpx
 import pytest
@@ -131,7 +133,8 @@ def test_uv_is_looked_for_where_a_login_item_cannot_see_it(tmp_path):
         return None
 
     assert update.target(str(helper), prefix=str(tool), environ={"PATH": "/usr/bin"}, which=which) is None
-    assert any(p.endswith("/.local/bin") for p in seen["path"].split(":"))
+    searched = [Path(p) for p in seen["path"].split(os.pathsep)]
+    assert Path.home() / ".local" / "bin" in searched
 
 
 def test_anything_else_is_not_ours_to_update(tmp_path):
