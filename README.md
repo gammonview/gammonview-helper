@@ -23,8 +23,8 @@ uv tool install gammonview-helper
 ```
 
 That pulls in the analysis engine and its neural networks — about 80 MB, and it
-takes a minute or two the first time. Upgrade later with `uv tool upgrade
-gammonview-helper`.
+takes a minute or two the first time. Update later with `gammonview-helper
+update` (below).
 
 Two other forms, for whoever prefers them:
 
@@ -84,8 +84,8 @@ these controls:
   Once linked, the same place offers **Unlink This Computer…**, which asks
   first and does what `unlink` does. Not while a match is being analysed.
 - **Update to …** — only when gammonview.com offers a newer helper. Installed
-  by the installer, it updates itself and restarts; installed with `uv tool` or
-  `pipx`, it tells you to upgrade it the same way.
+  by the installer or with `uv tool`, it updates itself and restarts; installed
+  any other way (`pipx`, a checkout), it tells you to update it the same way.
 - **About GammonView Helper**, with the version.
 - **Quit GammonView Helper.** Asks first, then stops it until you next log in
   or open the app below. A match being analysed at that moment is stopped, and
@@ -134,12 +134,19 @@ The eventual installer does this for you; the script exists because the machine
 this is developed on needed it first, and `deploy/com.gammonview.helper.plist`
 records the four choices in it that are not boilerplate.
 
-## The other two commands
+## The other commands
 
 ```bash
+gammonview-helper update     # install the version gammonview.com has released
 gammonview-helper status     # what is configured, and is the link still alive
 gammonview-helper unlink     # unlink this computer from its account
 ```
+
+`update` installs exactly the version gammonview.com offers, not simply the
+newest on PyPI, and on a Mac restarts the login item onto it. Elsewhere, stop
+the running helper and start it again afterwards. It works for an installer
+install and a `uv tool` one; for anything else it says to update the way you
+installed it.
 
 `unlink` does both halves: it tells the site to drop this computer, then
 forgets the credentials here. If it cannot reach the site it still forgets the

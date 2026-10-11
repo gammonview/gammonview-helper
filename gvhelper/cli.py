@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import webbrowser
@@ -449,6 +450,47 @@ def cmd_start(cfg: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_update(cfg: Config, args: argparse.Namespace) -> int:
+    """Install the version the site has released, and restart onto it.
+
+    The one command a person is told to type when a helper is out of date, so
+    it does both halves -- the install and the restart -- that otherwise take
+    two commands somebody has to know. See `update.py` for which installs it
+    can update.
+    """
+    from . import update
+
+    release = update.latest(cfg)
+    if release is None:
+        _say(f"Could not reach {cfg.site} to ask which version is current.")
+        return 1
+    version = release["version"]
+    if not update.is_release(__version__):
+        _say(f"This is a development build ({__version__}); update it from its checkout.")
+        return 0
+    if not update.newer(version, __version__):
+        _say(f"GammonView Helper {__version__} is up to date.")
+        return 0
+
+    where = update.target(os.path.abspath(sys.argv[0]))
+    if where is None:
+        _say("This copy was not installed by the GammonView installer or with `uv tool`,")
+        _say("so update it the way you installed it.")
+        return 1
+
+    _say(f"Updating GammonView Helper {__version__} to {version}. This takes a minute or two.")
+    problem = update.install(where, release)
+    if problem is not None:
+        _say(f"The update did not finish: {problem}")
+        return 1
+    if update.restart_login_item():
+        _say(f"Updated to {version}, and restarted.")
+    else:
+        _say(f"Updated to {version}. If the helper is running, stop it and start it again")
+        _say("to use the new version.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="gammonview-helper",
@@ -513,6 +555,11 @@ def build_parser() -> argparse.ArgumentParser:
         "start", help="start the login item if it is stopped (macOS; what the app runs)"
     )
     start.set_defaults(func=cmd_start)
+
+    upd = sub.add_parser(
+        "update", help="install the version gammonview.com has released, and restart onto it"
+    )
+    upd.set_defaults(func=cmd_update)
     return parser
 
 

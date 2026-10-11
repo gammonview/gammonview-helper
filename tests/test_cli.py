@@ -502,3 +502,79 @@ def test_unlink_porcelain_distinguishes_left_from_skipped(capsys):
 def test_no_command_prints_help(capsys):
     assert cli.main([]) == 1
     assert "usage" in capsys.readouterr().out.lower()
+
+
+# --- update ------------------------------------------------------------------
+
+
+def _release(monkeypatch, version):
+    from gvhelper import update
+    monkeypatch.setattr(update, "latest", lambda cfg: None if version is None else {"version": version})
+    return update
+
+
+def test_update_offline_says_so(capsys, monkeypatch):
+    _release(monkeypatch, None)
+    assert cli.main(["update"]) == 1
+    assert "Could not reach" in capsys.readouterr().out
+
+
+def test_update_when_current_does_nothing(capsys, monkeypatch):
+    from gvhelper import cli
+    monkeypatch.setattr(cli, "__version__", "0.8.0")
+    update = _release(monkeypatch, "0.8.0")
+    monkeypatch.setattr(update, "install", lambda *a: pytest.fail("installed"))
+    assert cli.main(["update"]) == 0
+    assert "up to date" in capsys.readouterr().out
+
+
+def test_update_leaves_a_dev_build_alone(capsys, monkeypatch):
+    from gvhelper import cli
+    monkeypatch.setattr(cli, "__version__", "0.7.1.dev0+gabc")
+    update = _release(monkeypatch, "0.8.0")
+    monkeypatch.setattr(update, "install", lambda *a: pytest.fail("installed"))
+    assert cli.main(["update"]) == 0
+    assert "development build" in capsys.readouterr().out
+
+
+def test_update_installs_and_restarts(capsys, monkeypatch):
+    from gvhelper import cli
+    monkeypatch.setattr(cli, "__version__", "0.7.2")
+    update = _release(monkeypatch, "0.8.0")
+    seen = {}
+    monkeypatch.setattr(update, "target", lambda helper: "where")
+    monkeypatch.setattr(update, "install", lambda where, release: seen.setdefault("v", release["version"]) and None)
+    monkeypatch.setattr(update, "restart_login_item", lambda: True)
+    assert cli.main(["update"]) == 0
+    assert seen["v"] == "0.8.0"
+    assert "Updated to 0.8.0, and restarted." in capsys.readouterr().out
+
+
+def test_update_without_a_login_item_says_to_restart(capsys, monkeypatch):
+    from gvhelper import cli
+    monkeypatch.setattr(cli, "__version__", "0.7.2")
+    update = _release(monkeypatch, "0.8.0")
+    monkeypatch.setattr(update, "target", lambda helper: "where")
+    monkeypatch.setattr(update, "install", lambda where, release: None)
+    monkeypatch.setattr(update, "restart_login_item", lambda: False)
+    assert cli.main(["update"]) == 0
+    assert "stop it and start it again" in capsys.readouterr().out
+
+
+def test_update_refuses_an_install_it_cannot_identify(capsys, monkeypatch):
+    from gvhelper import cli
+    monkeypatch.setattr(cli, "__version__", "0.7.2")
+    update = _release(monkeypatch, "0.8.0")
+    monkeypatch.setattr(update, "target", lambda helper: None)
+    assert cli.main(["update"]) == 1
+    assert "the way you installed it" in capsys.readouterr().out
+
+
+def test_a_failed_update_says_why(capsys, monkeypatch):
+    from gvhelper import cli
+    monkeypatch.setattr(cli, "__version__", "0.7.2")
+    update = _release(monkeypatch, "0.8.0")
+    monkeypatch.setattr(update, "target", lambda helper: "where")
+    monkeypatch.setattr(update, "install", lambda where, release: "error: no network")
+    assert cli.main(["update"]) == 1
+    assert "error: no network" in capsys.readouterr().out

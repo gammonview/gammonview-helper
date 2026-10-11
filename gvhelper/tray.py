@@ -419,15 +419,22 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
             if release is None:
                 return
             bring_forward()
-            root = update.installer_root(os.path.abspath(sys.argv[0]))
-            if root is None or not under_login_item():
+            where = update.target(os.path.abspath(sys.argv[0]))
+            if where is None:
                 rumps.alert(
                     title=f"GammonView Helper {release['version']} is available",
                     message=(
-                        "This copy was not installed by the GammonView installer, "
-                        "so update it the way you installed it -- for example, "
-                        "`uv tool upgrade gammonview-helper`."
+                        "This copy was not installed by the GammonView installer "
+                        "or with `uv tool`, so update it the way you installed it."
                     ),
+                )
+                return
+            if not under_login_item():
+                # Started by hand, so there is a terminal, and nothing here
+                # could restart it: the command does both halves there.
+                rumps.alert(
+                    title=f"GammonView Helper {release['version']} is available",
+                    message="Quit this copy, then run `gammonview-helper update` in a terminal.",
                 )
                 return
             confirmed = rumps.alert(
@@ -440,13 +447,13 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
                 return
             self._updating = True
             threading.Thread(
-                target=self._update, args=(root, release), name="helper-update-install",
+                target=self._update, args=(where, release), name="helper-update-install",
                 daemon=True,
             ).start()
             self.refresh()
 
-        def _update(self, root, release: dict) -> None:
-            problem = update.install(root, release)
+        def _update(self, where, release: dict) -> None:
+            problem = update.install(where, release)
             if problem is not None:
                 events.put(("update-failed", problem))
                 return
