@@ -9,8 +9,9 @@ namespace GammonView.Installer
     /// <summary>
     /// Everything the installer creates, and nothing outside it.
     ///
-    /// One directory, plus one scheduled task. As on macOS, deliberately not
-    /// here: Program Files, the registry's PATH, the user's `uv`, their Python.
+    /// One directory, plus a scheduled task, a Start menu shortcut and a
+    /// Settings entry (`AppEntry`). As on macOS, deliberately not here: Program
+    /// Files, the registry's PATH, the user's `uv`, their Python.
     /// Nothing needs administrator rights, and nothing asks for them.
     ///
     /// The root is `%LOCALAPPDATA%\GammonView`, which is also what
@@ -42,6 +43,8 @@ namespace GammonView.Installer
         public static readonly string Bin = Path.Combine(Root, "bin");
         public static readonly string Uv = Path.Combine(Bin, "uv.exe");
         public static readonly string Helper = Path.Combine(Bin, "gammonview-helper.exe");
+        /// <summary>This program's own copy, for Settings > Apps and the helper's Update. See `AppEntry`.</summary>
+        public static readonly string Installer = Path.Combine(Bin, "GammonView-Installer.exe");
 
         /// <summary>`UV_TOOL_DIR`: the venv holding the helper and the engine.</summary>
         public static readonly string Tools = Path.Combine(Root, "tools");

@@ -11,7 +11,7 @@ Four commands, and the first one is the only one most people will ever type:
     gammonview-helper unlink     # forget this machine's credentials
 
 And `start`, which nobody types: it is what opening "GammonView Helper" in
-Applications runs (`macapp.py`).
+Applications runs (`macapp.py`), or in the Windows Start menu (`winapp.py`).
 
 Written for a terminal a non-technical person has been talked into opening. The
 output is sentences rather than log lines, the word to confirm is unmissable,
@@ -475,8 +475,13 @@ def cmd_unlink(cfg: Config, args: argparse.Namespace) -> int:
 
 def cmd_start(cfg: Config, args: argparse.Namespace) -> int:
     """Start the login item if it is stopped: what opening the app does."""
+    if sys.platform == "win32":
+        from . import winapp
+
+        winapp.tell(winapp.start())
+        return 0
     if sys.platform != "darwin":
-        _say("`start` is for macOS. Elsewhere, run `gammonview-helper run`.")
+        _say("`start` is for macOS and Windows. Elsewhere, run `gammonview-helper run`.")
         return 2
     from . import macapp
 
@@ -509,12 +514,19 @@ def cmd_update(cfg: Config, args: argparse.Namespace) -> int:
         return 0
 
     helper = os.path.abspath(sys.argv[0])
-    if sys.platform == "win32" and update.installer_root(helper) is not None:
+    root = update.installer_root(helper)
+    if sys.platform == "win32" and root is not None:
         # Windows will not replace files a running process has loaded, and the
         # login item is running out of this very venv. The installer stops it
         # first; nothing in here can stop the process it is running inside.
-        _say(f"GammonView Helper {version} is out. To update, open the GammonView")
-        _say("installer again and choose Update.")
+        from . import winapp
+
+        installer = winapp.installer(root)
+        if installer is not None and winapp.open_installer(installer):
+            _say(f"Opening the GammonView installer to update to {version}.")
+            return 0
+        _say(f"GammonView Helper {version} is out. To update, download the GammonView")
+        _say("installer from gammonview.com, open it, and choose Update.")
         return 1
 
     where = update.target(helper)
@@ -597,7 +609,8 @@ def build_parser() -> argparse.ArgumentParser:
     unlink.set_defaults(func=cmd_unlink)
 
     start = sub.add_parser(
-        "start", help="start the login item if it is stopped (macOS; what the app runs)"
+        "start",
+        help="start the login item if it is stopped (macOS and Windows; what the app runs)",
     )
     start.set_defaults(func=cmd_start)
 

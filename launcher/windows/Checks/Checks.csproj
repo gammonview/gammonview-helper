@@ -23,5 +23,6 @@
     <Compile Include="../Sources/Shell.cs" />
     <Compile Include="../Sources/LoginItem.cs" />
     <Compile Include="../Sources/Installer.cs" />
+    <Compile Include="../Sources/AppEntry.cs" />
   </ItemGroup>
 </Project>

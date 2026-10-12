@@ -45,6 +45,17 @@ def test_quit_only_boots_out_the_login_item_it_is(monkeypatch):
     assert tray.under_login_item()
 
 
+def test_no_menu_on_windows_without_its_library(monkeypatch):
+    import sys
+
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+    monkeypatch.setattr(tray.sys, "platform", "win32")
+    monkeypatch.setitem(sys.modules, "pystray", None)
+    assert not tray.available()
+    monkeypatch.setattr(tray.sys, "platform", "linux")
+    assert not tray.available()
+
+
 def test_no_menu_over_ssh(monkeypatch):
     monkeypatch.setenv("SSH_CONNECTION", "10.0.0.1 1 10.0.0.2 22")
     assert not tray.available()

@@ -588,8 +588,35 @@ def test_update_on_windows_sends_an_installer_install_to_the_installer(capsys, m
     monkeypatch.setattr(cli.sys, "platform", "win32")
     monkeypatch.setattr(update, "installer_root", lambda helper: "root")
     monkeypatch.setattr(update, "install", lambda *a: pytest.fail("installed under a running helper"))
+    from gvhelper import winapp
+    monkeypatch.setattr(winapp, "installer", lambda root: None)
     assert cli.main(["update"]) == 1
-    assert "open the GammonView" in capsys.readouterr().out
+    assert "download the GammonView" in capsys.readouterr().out
+
+
+def test_update_on_windows_opens_the_installers_own_copy(capsys, monkeypatch):
+    from gvhelper import cli, winapp
+    monkeypatch.setattr(cli, "__version__", "0.7.2")
+    update = _release(monkeypatch, "0.8.0")
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(update, "installer_root", lambda helper: "root")
+    monkeypatch.setattr(update, "install", lambda *a: pytest.fail("installed under a running helper"))
+    opened = []
+    monkeypatch.setattr(winapp, "installer", lambda root: f"{root}/bin/GammonView-Installer.exe")
+    monkeypatch.setattr(winapp, "open_installer", lambda path: opened.append(path) or True)
+    assert cli.main(["update"]) == 0
+    assert opened == ["root/bin/GammonView-Installer.exe"]
+    assert "Opening the GammonView installer" in capsys.readouterr().out
+
+
+def test_start_on_windows_starts_the_task_and_says_where_the_icon_is(monkeypatch):
+    from gvhelper import winapp
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    told = []
+    monkeypatch.setattr(winapp, "start", lambda: winapp.STARTED)
+    monkeypatch.setattr(winapp, "tell", told.append)
+    assert cli.main(["start"]) == 0
+    assert told == [winapp.STARTED]
 
 
 def test_a_windowless_helper_writes_to_a_log(monkeypatch, tmp_path):

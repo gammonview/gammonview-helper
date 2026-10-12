@@ -79,6 +79,9 @@ jobs:
           # `python -m gvhelper` must import from the venv the task points at.
           & "$root\tools\gammonview-helper\Scripts\python.exe" -m gvhelper --version
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          # The copy Settings > Apps uninstalls with and the menu updates with.
+          $copy = "$root\bin\GammonView-Installer.exe"
+          if (-not (Test-Path $copy)) { Write-Error "no $copy"; exit 1 }
 
       - uses: actions/upload-artifact@v4
         with:

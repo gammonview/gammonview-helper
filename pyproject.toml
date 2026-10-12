@@ -37,12 +37,13 @@ classifiers = [
 # token is a credential and belongs in the platform's credential store rather
 # than in a file next to the config.
 #
-# `rumps` draws the menu-bar item, and only on macOS -- the one platform with
-# an installer and a login item, so the one where the helper runs with no
-# terminal to stop it from. It is a base dependency rather than an extra
-# because the installer is frozen and asks for plain `gammonview-helper`: an
-# extra would never reach a machine it set up. Windows and Linux get nothing
-# extra until they get an installer too.
+# `rumps` draws the menu-bar item on macOS, and `pystray` the notification-area
+# icon on Windows -- the two platforms with an installer and a login item, so
+# the ones where the helper runs with no terminal to stop it from. They are
+# base dependencies rather than an extra because the installers are frozen and
+# ask for plain `gammonview-helper`: an extra would never reach a machine they
+# set up. `pystray` brings Pillow, to hand it the icon. Linux gets nothing
+# extra until it gets an installer too.
 #
 # Still absent: anything for watching folders. That is v2 (`docs/DesktopHelper.md`,
 # "v1 analyses. It does not watch folders").
@@ -60,6 +61,7 @@ dependencies = [
     "httpx>=0.27",
     "keyring>=25.0",
     "rumps>=0.4; sys_platform == 'darwin'",
+    "pystray>=0.19; sys_platform == 'win32'",
 ]
 
 [project.urls]

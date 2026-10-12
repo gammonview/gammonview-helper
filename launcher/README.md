@@ -218,20 +218,39 @@ when unplugged, end after three days. `LoginItem.cs` has the full list.
 tool install --force` swaps files under a running helper and nothing notices.
 Windows refuses to replace a loaded DLL, so Update and Uninstall both end the
 task and then every process running out of the install root. For the same
-reason `gammonview-helper update` on a Windows installer install says to run
-the installer instead.
+reason the helper never updates itself on Windows: its menu's **Update** and
+`gammonview-helper update` open the installer with `--update`, and the
+installer does it.
+
+**It keeps a copy of itself** in `bin`, because two things need an installer
+that is still there after Downloads has been emptied: the **Settings > Apps**
+entry, whose Uninstall runs `GammonView-Installer.exe --uninstall`, and the
+menu's Update. Settings starts the copy in `bin`, which the uninstall deletes,
+so that copy hands over to one in `%TEMP%` (`--temporary`, which deletes itself
+on close). An older download opened again does not replace a newer copy.
+
+**A Start menu shortcut**, "GammonView Helper", runs `pythonw.exe -m gvhelper
+start`: start the task if it is stopped, and say where the icon is. Windows 11
+hides a new notification-area icon behind the ^ arrow, so starting in silence,
+as the macOS app does, would look like not starting. What `start` does lives in
+the package (`gvhelper/winapp.py`); the installer only writes the shortcut.
+
+**The menu is a notification-area icon** (`gvhelper/wintray.py`, on `pystray`),
+with the macOS menu's items. Quit just exits: the task restarts only on
+failure.
 
 **Logs are inside the root**, at `%LOCALAPPDATA%\GammonView\logs\helper.log`,
 written by the helper itself when it finds it has no console (`pythonw` has
-none). Deleting the root is the whole uninstall:
+none). Uninstall from Settings > Apps, or open the installer again and press
+**Uninstall**; either unlinks first. By hand:
 
 ```bat
 schtasks /End /TN "GammonView Helper <your SID>"
 schtasks /Delete /TN "GammonView Helper <your SID>" /F
+reg delete HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\GammonViewHelper /f
+del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\GammonView Helper.lnk"
 rmdir /s /q "%LOCALAPPDATA%\GammonView"
 ```
-
-or open the installer again and press **Uninstall**, which unlinks first.
 
 **`app.manifest` is load-bearing.** Windows assumes an unmanifested program
 with "Installer" in its name wants administrator rights and raises a UAC prompt;
@@ -252,7 +271,7 @@ throwaway name, reads it back and deletes it -- the schema is Windows' and only
 Windows can say whether it is a task.
 
 The sandbox is the macOS one: `GAMMONVIEW_INSTALLER_ROOT` moves the root and
-skips the task, and only then is `GAMMONVIEW_INSTALLER_MANIFEST` honoured. A
+skips the task, the shortcut and the Settings entry, and only then is `GAMMONVIEW_INSTALLER_MANIFEST` honoured. A
 sandboxed run also points the helper at the sandbox for its config. Add
 `GAMMONVIEW_INSTALLER_HEADLESS=1` and it runs with no window, prints each step,
 and stops before pairing; that is what `launcher-windows.yml` runs on every

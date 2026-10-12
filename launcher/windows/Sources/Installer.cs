@@ -39,6 +39,13 @@ namespace GammonView.Installer
             public Choice(string message) { Message = message; }
         }
 
+        /// <summary>Settings > Apps asked for an uninstall: confirm it, offering nothing else.</summary>
+        public sealed class ConfirmUninstall : InstallerEvent
+        {
+            public string Message { get; }
+            public ConfirmUninstall(string message) { Message = message; }
+        }
+
         public sealed class Finished : InstallerEvent
         {
             public string Title { get; }
@@ -86,12 +93,40 @@ namespace GammonView.Installer
     {
         public static bool IsInstalled => File.Exists(Paths.Helper);
 
+        /// <summary>
+        /// Said on both finished screens, because Windows 11 puts a new
+        /// notification-area icon behind the ^ arrow, where nobody finds it
+        /// without being told.
+        /// </summary>
+        public const string WhereTheIconIs =
+            "Its icon is by the clock, at the bottom right of the screen (click ^ if you "
+            + "do not see it). Right-click it to pause the helper or check on it.";
+
         public static void Start(Action<InstallerEvent> emit)
         {
             if (!IsInstalled) { Install(emit); return; }
             emit(new InstallerEvent.Choice(
                 "GammonView Helper is already installed on this computer.\n\n"
                 + "Update it to the current version, or remove it completely."));
+        }
+
+        /// <summary>What `--uninstall` opens on: Settings > Apps' Uninstall button.</summary>
+        public static void StartUninstall(Action<InstallerEvent> emit)
+        {
+            if (!IsInstalled)
+            {
+                // A Settings entry outliving its install: tidy it, and say so.
+                LoginItem.Remove();
+                AppEntry.Remove();
+                emit(new InstallerEvent.Finished("Removed",
+                    "GammonView Helper is not installed on this computer, so there was nothing "
+                    + "to remove."));
+                return;
+            }
+            emit(new InstallerEvent.ConfirmUninstall(
+                "This removes GammonView Helper from this computer and unlinks it from your "
+                + "GammonView account.\n\n"
+                + "Your matches and analyses on gammonview.com are not affected."));
         }
 
         public static void Install(Action<InstallerEvent> emit) => Install(emit, pair: true);
@@ -122,6 +157,7 @@ namespace GammonView.Installer
 
                 emit(new InstallerEvent.Step("Almost there", "Starting GammonView Helper…"));
                 LoginItem.Install(manifest.Site);
+                AppEntry.Install(manifest.Version);
 
                 var linked = IsLinked(manifest);
                 if (!pair)
@@ -134,7 +170,8 @@ namespace GammonView.Installer
                 {
                     emit(new InstallerEvent.Finished("All set",
                         "GammonView Helper is up to date and linked to your account.\n\n"
-                        + "It runs in the background. There is nothing else to do."));
+                        + "It runs in the background. There is nothing else to do.\n\n"
+                        + WhereTheIconIs));
                     return;
                 }
                 Pair(manifest, emit);
@@ -163,6 +200,7 @@ namespace GammonView.Installer
 
             emit(new InstallerEvent.Step("Removing", "Stopping GammonView Helper…"));
             LoginItem.Remove();
+            AppEntry.Remove();
 
             emit(new InstallerEvent.Step("Removing", "Deleting files…"));
             Shell.DeleteTree(Paths.Root);
@@ -400,7 +438,8 @@ namespace GammonView.Installer
                     return new InstallerEvent.Finished("All set",
                         "This computer is linked.\n\n"
                         + "GammonView Helper runs in the background from now on. "
-                        + "Choose it on gammonview.com when you analyse a match.");
+                        + "Choose it on gammonview.com when you analyse a match.\n\n"
+                        + WhereTheIconIs);
                 case "failed":
                     return new InstallerEvent.Failed(
                         Json.String(o, "reason") ?? "Linking did not finish.",

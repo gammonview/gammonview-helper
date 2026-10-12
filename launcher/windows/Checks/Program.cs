@@ -221,6 +221,31 @@ buffer.Flush();
 Check("the unterminated tail is delivered at the end", lines.Last() == "partial");
 Check("escape sequences are stripped", Shell.Plain("\u001B[2K\u001B[1mResolved\u001B[0m 3 packages") == "Resolved 3 packages");
 
+// --- AppEntry ---
+
+Console.WriteLine("AppEntry -- Settings > Apps, and the Start menu");
+var installerCopy = @"C:\Users\Jo Smith\AppData\Local\GammonView\bin\GammonView-Installer.exe";
+var entry = AppEntry.Values(installerCopy, "0.9.0", @"C:\Users\Jo Smith\AppData\Local\GammonView",
+    81234, new DateTime(2026, 10, 12));
+Check("Uninstall runs the kept copy, quoted for the space in the name",
+    (string)entry["UninstallString"] == "\"" + installerCopy + "\" --uninstall");
+Check("...and that command line splits back into the copy and the flag",
+    Same(LoginItem.SplitCommandLine((string)entry["UninstallString"]), installerCopy, "--uninstall"));
+Check("the version shown is the helper's", (string)entry["DisplayVersion"] == "0.9.0");
+Check("the icon is the installer's", (string)entry["DisplayIcon"] == installerCopy + ",0");
+Check("no Modify or Repair buttons", (int)entry["NoModify"] == 1 && (int)entry["NoRepair"] == 1);
+Check("the size is a number of kilobytes", entry["EstimatedSize"] is int kb && kb == 81234);
+Check("the date is the registry's yyyyMMdd", (string)entry["InstallDate"] == "20261012");
+Check("every value is a string or a DWORD", entry.Values.All(v => v is string || v is int));
+Check("per user, under the branch Settings reads",
+    AppEntry.UninstallKey.StartsWith(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\"));
+Check("the shortcut runs `start`, which the package decides",
+    Shell.CommandLine(AppEntry.StartArguments) == "-m gvhelper start");
+Check("the kept copy lives in bin",
+    Paths.Installer == System.IO.Path.Combine(Paths.Bin, "GammonView-Installer.exe"));
+Check("the task's description points at Settings",
+    LoginItem.Document("p", "w", null, "u", "S-1-5-21-1").Contains("uninstall GammonView Helper in Settings"));
+
 // --- on Windows: does Task Scheduler itself accept the document? ---
 //
 // Everything above checks that the document says what we mean. Only Windows can

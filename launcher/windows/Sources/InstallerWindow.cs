@@ -186,6 +186,17 @@ namespace GammonView.Installer
                     SetAlternate("Uninstall", () => { BeginWork("Removing"); OnUninstall?.Invoke(); });
                     break;
 
+                case InstallerEvent.ConfirmUninstall confirm:
+                    StopProgress();
+                    stepTitle.Text = "Remove GammonView Helper?";
+                    detail.Text = confirm.Message;
+                    secondary.Text = "Cancel";
+                    // Not the AcceptButton, as on the Choice screen: Enter must
+                    // not uninstall, even when uninstalling is all that is offered.
+                    SetPrimary("Uninstall", () => { BeginWork("Removing"); OnUninstall?.Invoke(); },
+                        accept: false);
+                    break;
+
                 case InstallerEvent.Finished finished:
                     StopProgress();
                     stepTitle.Text = finished.Title;
@@ -235,13 +246,14 @@ namespace GammonView.Installer
             detail.Height = Math.Max(detailHeight.Value, primary.Top - detail.Top - 12);
         }
 
-        private void SetPrimary(string title, Action action)
+        private void SetPrimary(string title, Action action, bool accept = true)
         {
             primary.Text = title;
             primary.Visible = true;
             primaryAction = action;
-            AcceptButton = primary;
-            primary.Focus();
+            AcceptButton = accept ? primary : null;
+            if (accept) primary.Focus();
+            else secondary.Focus();
         }
 
         private void SetAlternate(string title, Action action)
@@ -261,6 +273,7 @@ namespace GammonView.Installer
             alternate.Visible = false;
             notice.Visible = false;
             AcceptButton = null;
+            secondary.Text = "Quit";
             if (detailHeight.HasValue) detail.Height = detailHeight.Value;
             progress.Style = ProgressBarStyle.Marquee;
             progress.Visible = true;

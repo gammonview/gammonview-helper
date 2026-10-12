@@ -75,7 +75,7 @@ $@"<?xml version=""1.0"" encoding=""UTF-16""?>
 <Task version=""1.2"" xmlns=""http://schemas.microsoft.com/windows/2004/02/mit/task"">
   <RegistrationInfo>
     <Author>GammonView</Author>
-    <Description>Analyses GammonView matches on this computer. To remove it, open the GammonView installer again and press Uninstall.</Description>
+    <Description>Analyses GammonView matches on this computer. To remove it, uninstall GammonView Helper in Settings, Apps.</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>

@@ -3,10 +3,11 @@
 
 """The menu-bar item: what the helper is doing, whose it is, and its controls.
 
-macOS only, for now. The Mac is the one platform with an installer and a login
-item, which makes it the one place the helper runs with no terminal: without
-this, the only way to stop it is `launchctl`, and the only way to tell whether
-it is working is the website.
+macOS and Windows: the platforms with an installer and a login item, which
+makes them the places the helper runs with no terminal. Without this, the only
+way to stop it is `launchctl` or Task Manager, and the only way to tell whether
+it is working is the website. This module is the macOS menu and the words both
+share; `wintray.py` draws the same menu in the Windows notification area.
 
 **It lives here and not in the launcher.** The launcher is unsigned and frozen
 -- every change to it costs each user a Gatekeeper dialog -- while this package
@@ -67,10 +68,15 @@ def available() -> bool:
     process started from a remote shell that tries to join that session either
     fails or puts an icon in front of somebody else.
     """
-    if sys.platform != "darwin" or os.environ.get("SSH_CONNECTION"):
+    if os.environ.get("SSH_CONNECTION"):
         return False
     try:
-        import rumps  # noqa: F401
+        if sys.platform == "darwin":
+            import rumps  # noqa: F401
+        elif sys.platform == "win32":
+            import pystray  # noqa: F401
+        else:
+            return False
     except ImportError:
         return False
     return True
@@ -91,23 +97,27 @@ def under_login_item() -> bool:
     return os.environ.get("XPC_SERVICE_NAME") == LAUNCHD_LABEL
 
 
-def status_line(control: Control) -> str:
-    """The menu's first line, in the words the website would use."""
+def status_line(control: Control, percent: bool = True) -> str:
+    """The menu's first line, in the words the website would use.
+
+    `percent=False` leaves out how far a match has got, for a menu that cannot
+    be redrawn while it is open (`wintray.py`).
+    """
     progress = control.progress
-    percent = ""
-    if progress is not None:
+    shown = ""
+    if progress is not None and percent:
         done, total = progress.get()
         if total:
-            percent = f" {100 * done // total}%"
+            shown = f" {100 * done // total}%"
     if control.paused:
         if progress is not None:
-            return f"Pausing after this match…{percent}"
+            return f"Pausing after this match…{shown}"
         return "Paused"
     return {
         "starting": "Starting…",
         "unlinked": "Not linked to an account",
         "idle": "Ready for matches",
-        "busy": f"Analysing a match…{percent}",
+        "busy": f"Analysing a match…{shown}",
         "retrying": "Can't reach GammonView, retrying",
     }.get(control.state, "Ready for matches")
 
@@ -145,6 +155,11 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
 
     Returns the loop's exit code if it ends by itself, and 0 on Quit.
     """
+    if sys.platform == "win32":
+        from . import wintray
+
+        return wintray.run(cfg, control, loop)
+
     import rumps
     from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
 
