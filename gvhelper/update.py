@@ -85,11 +85,12 @@ def installer_root(helper: str) -> Path | None:
 
     The installer writes `<root>/bin/gammonview-helper` with its own `uv`
     beside it and the venv under `<root>/tools`; a `uv tool` install of
-    somebody's own has neither in that arrangement.
+    somebody's own has neither in that arrangement. `uv.exe` on Windows.
     """
     bin_dir = Path(helper).parent
     root = bin_dir.parent
-    if (bin_dir / "uv").is_file() and (root / "tools").is_dir():
+    has_uv = (bin_dir / "uv").is_file() or (bin_dir / "uv.exe").is_file()
+    if has_uv and (root / "tools").is_dir():
         return root
     return None
 

@@ -115,3 +115,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: launcher/macos/checks.sh
+
+  # The Windows launcher's decisions, likewise on every push. On a Windows
+  # runner rather than the cheaper Linux one, because the checks include one
+  # only Windows can answer: whether Task Scheduler accepts the login item's
+  # document at all. `launcher-windows.yml` does the build and the smoke install.
+  launcher-windows:
+    name: launcher checks (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: launcher/windows/checks.sh

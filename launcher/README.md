@@ -11,7 +11,7 @@ where updating it costs nobody a dialog. See `docs/DesktopHelper.md` in the
 GammonView repository, *"The native surface is a launcher, and it is frozen"*.
 
     launcher/macos/    Swift + AppKit, universal binary, no Xcode project
-    launcher/windows/  not built yet
+    launcher/windows/  C# + WinForms on .NET Framework 4.8, one .exe with uv inside
 
 ## Building
 
@@ -171,3 +171,94 @@ install, and a shipped run has no path to it at all.
 The pairing half can be driven without a relay by building a stub wheel that
 speaks the two porcelain shapes (`{"event": "offer", ...}` and
 `{"event": "linked"}`) and pointing a local manifest at its version.
+
+## Windows
+
+The same program, step for step, and its source comments point back at the
+Swift ones rather than repeat them. `launcher/windows/`:
+
+```sh
+launcher/windows/checks.sh                      # the decisions, any OS
+launcher/windows/build.sh                       # -> build/GammonView-Installer.exe
+VERSION=1.0.0 launcher/windows/build.sh
+```
+
+Needs the .NET SDK (8 or later) and `curl`, on **any** OS: the exe targets .NET
+Framework 4.8, which ships with Windows 10 and 11 so the user installs nothing
+first, and the Framework's reference assemblies come from NuGet, so a Mac can
+build it. Releases are built on a Windows runner anyway, because only there can
+the smoke install run (below).
+
+Released on its own tag namespace, which matches neither of the others:
+
+```sh
+git tag launcher-win-v1.0.0 && git push origin launcher-win-v1.0.0
+```
+
+A `workflow_dispatch` of `launcher-windows.yml` builds, checks and
+smoke-installs without releasing, and leaves the exe as a workflow artifact.
+
+### Where Windows differs
+
+**One `.exe`, not a zip.** `uv` is embedded as a resource and written out on
+every run. A downloaded zip has to be extracted first, and on Windows the
+failure when it is not is silent: Explorer runs the exe from a temporary copy
+that disappears.
+
+**The login item is a scheduled task**, not the `Run` registry key, because a
+task can restart the helper after a crash (launchd's `KeepAlive`) and can be
+stopped by name. It runs `pythonw.exe -m gvhelper run` out of the venv -- the
+console entry point would put a window on the desktop at every sign-in -- with
+`--site` on the command line where macOS sets `GAMMONVIEW_SITE`. The task
+carries the user's SID in its name, needs no administrator rights, and has the
+task defaults that would quietly break it turned off: no start on battery, stop
+when unplugged, end after three days. `LoginItem.cs` has the full list.
+
+**The running helper is stopped before anything is replaced.** On macOS, `uv
+tool install --force` swaps files under a running helper and nothing notices.
+Windows refuses to replace a loaded DLL, so Update and Uninstall both end the
+task and then every process running out of the install root. For the same
+reason `gammonview-helper update` on a Windows installer install says to run
+the installer instead.
+
+**Logs are inside the root**, at `%LOCALAPPDATA%\GammonView\logs\helper.log`,
+written by the helper itself when it finds it has no console (`pythonw` has
+none). Deleting the root is the whole uninstall:
+
+```bat
+schtasks /End /TN "GammonView Helper <your SID>"
+schtasks /Delete /TN "GammonView Helper <your SID>" /F
+rmdir /s /q "%LOCALAPPDATA%\GammonView"
+```
+
+or open the installer again and press **Uninstall**, which unlinks first.
+
+**`app.manifest` is load-bearing.** Windows assumes an unmanifested program
+with "Installer" in its name wants administrator rights and raises a UAC prompt;
+`asInvoker` stops that. `dpiAware` stops the window, and the confirmation word,
+arriving blurred on a scaled display.
+
+**x64 only.** bgsage has Windows wheels for AMD64 alone, so an ARM64 PC runs
+the helper under emulation regardless -- and an x64 `uv` asks for an x64
+Python, where an ARM64 one would fetch an interpreter the engine cannot
+install into.
+
+### Testing it
+
+`checks.sh` ports every macOS check and adds the two decisions only Windows
+has: quoting an argument onto a command line, and the task document. On a
+Windows machine it also registers that document with Task Scheduler under a
+throwaway name, reads it back and deletes it -- the schema is Windows' and only
+Windows can say whether it is a task.
+
+The sandbox is the macOS one: `GAMMONVIEW_INSTALLER_ROOT` moves the root and
+skips the task, and only then is `GAMMONVIEW_INSTALLER_MANIFEST` honoured. A
+sandboxed run also points the helper at the sandbox for its config. Add
+`GAMMONVIEW_INSTALLER_HEADLESS=1` and it runs with no window, prints each step,
+and stops before pairing; that is what `launcher-windows.yml` runs on every
+build, against the live manifest and PyPI.
+
+```bat
+set GAMMONVIEW_INSTALLER_ROOT=%TEMP%\gv-test
+GammonView-Installer.exe
+```

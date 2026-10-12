@@ -1,0 +1,121 @@
+# Build `GammonView-Installer.exe` and attach it to a GitHub Release.
+#
+# A third tag namespace, for the reason `launcher.yml` has a second: the
+# Windows launcher is frozen exactly as the macOS one is, on its own cadence,
+# and rebuilding either must not release the other or the Python package.
+# `launcher-win-v*` matches neither `v*` nor `launcher-v*`.
+#
+#     git tag launcher-win-v1.0.0 && git push origin launcher-win-v1.0.0
+#
+# A dispatch run builds, checks and smoke-installs without releasing anything,
+# and leaves the exe as a workflow artifact -- the way to get one to test.
+name: launcher-windows
+
+on:
+  push:
+    tags: ["launcher-win-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build the installer
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: checks
+        run: launcher/windows/checks.sh
+
+      - name: version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "value=${GITHUB_REF_NAME#launcher-win-v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=0.0.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: build
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: launcher/windows/build.sh
+
+      # **The reason this job is on Windows.** The build itself would run
+      # anywhere; this would not. The exe is run for real, sandboxed and with
+      # no window, against the live manifest: the embedded uv unpacks, the
+      # pinned helper installs from PyPI onto a real Windows Python, the file
+      # the scheduled task will run is where the task will look for it, and
+      # the installed helper answers `status --porcelain`. It stops before
+      # pairing, which needs a person, and the sandbox keeps it off Task
+      # Scheduler -- `checks.sh` registered the real task document above.
+      - name: smoke install (sandboxed, headless)
+        shell: pwsh
+        env:
+          GAMMONVIEW_INSTALLER_ROOT: ${{ runner.temp }}\gv-smoke
+          GAMMONVIEW_INSTALLER_HEADLESS: "1"
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "smoke.log"
+          $p = Start-Process -FilePath "launcher\windows\build\GammonView-Installer.exe" `
+                -Wait -PassThru -NoNewWindow -RedirectStandardOutput $log
+          Get-Content $log
+          if ($p.ExitCode -ne 0) { Write-Error "installer exited $($p.ExitCode)"; exit 1 }
+
+          $root = $env:GAMMONVIEW_INSTALLER_ROOT
+          & "$root\bin\gammonview-helper.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $pythonw = "$root\tools\gammonview-helper\Scripts\pythonw.exe"
+          if (-not (Test-Path $pythonw)) { Write-Error "no $pythonw"; exit 1 }
+          # The login item's exact command, minus the window it does not have:
+          # `python -m gvhelper` must import from the venv the task points at.
+          & "$root\tools\gammonview-helper\Scripts\python.exe" -m gvhelper --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: |
+            launcher/windows/build/GammonView-Installer.exe
+            launcher/windows/build/GammonView-Installer.exe.sha256
+          if-no-files-found: error
+
+  release:
+    name: attach to the GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer-windows
+          path: dist/
+
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # No checkout in this job, so `gh` has no remote to infer it from.
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "$TAG" \
+              --notes "The Windows installer for GammonView Helper.
+
+          Download \`GammonView-Installer.exe\` and run it. Windows will say
+          **Windows protected your PC** the first time: press **More info**, then
+          **Run anyway**. It is unsigned, and that happens once per computer."
+          fi

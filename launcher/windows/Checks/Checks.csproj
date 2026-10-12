@@ -1,0 +1,27 @@
+<!--
+  The launcher's decisions, checked without installing anything. See
+  Checks/Program.cs. Modern .NET rather than 4.8 so it runs on any OS the SDK
+  does — the decisions are plain C# and do not care which runtime reads them.
+  Compiled against ../Sources directly: a check that drifts from the thing it
+  checks is worse than no check.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- CA1416: the Windows-only calls are never reached from a check. -->
+    <NoWarn>$(NoWarn);CA1416;SYSLIB0014</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../Sources/Json.cs" />
+    <Compile Include="../Sources/Manifest.cs" />
+    <Compile Include="../Sources/Paths.cs" />
+    <Compile Include="../Sources/Shell.cs" />
+    <Compile Include="../Sources/LoginItem.cs" />
+    <Compile Include="../Sources/Installer.cs" />
+  </ItemGroup>
+</Project>

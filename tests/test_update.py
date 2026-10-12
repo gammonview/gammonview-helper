@@ -60,6 +60,13 @@ def test_the_installers_install_is_recognised_by_its_uv(tmp_path):
     assert update.installer_root(str(tmp_path / ".local" / "bin" / "gammonview-helper")) is None
 
 
+def test_the_windows_installers_install_is_recognised_by_its_uv_exe(tmp_path):
+    root = installer_layout(tmp_path)
+    (root / "bin" / "uv").unlink()
+    (root / "bin" / "uv.exe").write_text("")
+    assert update.installer_root(str(root / "bin" / "gammonview-helper.exe")) == root
+
+
 def test_installing_runs_what_the_installer_runs(tmp_path):
     root = installer_layout(tmp_path)
     seen = {}

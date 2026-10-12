@@ -1,0 +1,55 @@
+<!--
+  The GammonView installer for Windows. See launcher/README.md.
+
+  .NET Framework 4.8, not .NET 8: 4.8 is part of Windows 10 (since 1903) and
+  Windows 11, so the .exe runs on a fresh machine with nothing installed first.
+  A .NET 8 program would either ask the user to install a runtime — the one
+  thing an installer for non-technical players must never do — or be published
+  self-contained at ~70 MB.
+
+  Built from any OS with the .NET SDK, because the Framework reference
+  assemblies come from a NuGet package rather than from Windows. That is what
+  lets build.sh run on a Mac and on CI alike. It is the only package, and it is
+  reference metadata, not code that ships.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>GammonView-Installer</AssemblyName>
+    <RootNamespace>GammonView.Installer</RootNamespace>
+    <ApplicationIcon>Resources\icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- AnyCPU without the 32-bit preference: 64-bit on x64, native on ARM64. -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Deterministic>true</Deterministic>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+
+    <!-- build.sh passes -p:Version=, from the launcher-win-v* tag. -->
+    <Version Condition="'$(Version)' == ''">0.0.0</Version>
+    <Product>GammonView Helper</Product>
+    <AssemblyTitle>GammonView Installer</AssemblyTitle>
+    <Company>GammonView</Company>
+    <Copyright>MIT licensed. Source: github.com/ngvlamis/gammonview-helper</Copyright>
+
+    <!-- `uv.zip` is fetched and verified by build.sh; it is not in git. -->
+    <UvZip Condition="'$(UvZip)' == ''">build\uv.zip</UvZip>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Sources\*.cs" />
+    <EmbeddedResource Include="$(UvZip)" LogicalName="uv.zip" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.Net" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -578,3 +578,48 @@ def test_a_failed_update_says_why(capsys, monkeypatch):
     monkeypatch.setattr(update, "install", lambda where, release: "error: no network")
     assert cli.main(["update"]) == 1
     assert "error: no network" in capsys.readouterr().out
+
+
+def test_update_on_windows_sends_an_installer_install_to_the_installer(capsys, monkeypatch):
+    """The login item is running out of the venv an update would replace."""
+    from gvhelper import cli
+    monkeypatch.setattr(cli, "__version__", "0.7.2")
+    update = _release(monkeypatch, "0.8.0")
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(update, "installer_root", lambda helper: "root")
+    monkeypatch.setattr(update, "install", lambda *a: pytest.fail("installed under a running helper"))
+    assert cli.main(["update"]) == 1
+    assert "open the GammonView" in capsys.readouterr().out
+
+
+def test_a_windowless_helper_writes_to_a_log(monkeypatch, tmp_path):
+    """`pythonw` has no stdout; the Windows login item must still leave a record."""
+    monkeypatch.setattr(cli.sys, "stdout", None)
+    monkeypatch.setattr(cli.sys, "stderr", None)
+    cli._log_when_windowless()
+    try:
+        cli._say("polling")
+        assert cli.sys.stdout is cli.sys.stderr
+    finally:
+        cli.sys.stdout.close()
+    log = tmp_path / "gv" / "logs" / "helper.log"
+    assert log.read_text(encoding="utf-8") == "polling\n"
+
+
+def test_a_log_past_its_limit_is_set_aside(monkeypatch, tmp_path):
+    log = tmp_path / "gv" / "logs" / "helper.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("x" * 20)
+    monkeypatch.setattr(cli, "LOG_LIMIT", 10)
+    monkeypatch.setattr(cli.sys, "stdout", None)
+    monkeypatch.setattr(cli.sys, "stderr", None)
+    cli._log_when_windowless()
+    cli.sys.stdout.close()
+    assert (log.parent / "helper.log.1").read_text() == "x" * 20
+    assert log.read_text() == ""
+
+
+def test_a_console_is_left_alone(capsys):
+    before = cli.sys.stdout
+    cli._log_when_windowless()
+    assert cli.sys.stdout is before
