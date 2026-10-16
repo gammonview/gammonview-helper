@@ -59,8 +59,8 @@ classifiers = [
 #
 # On Windows, `bgsage` is pinned exactly and `msvc-runtime` comes with it: the
 # engine's extension crashes against a C++ runtime older than the compiler it
-# was built with, and many PCs have one. `_load_msvc_runtime` in `cli.py` loads
-# the bundled copy first. The pin is what makes that safe -- each bgsage build
+# was built with, and many PCs have one. `_gvhelper_msvc.py`, run from a `.pth`
+# file at every interpreter start, loads the bundled copy first. The pin is what makes that safe -- each bgsage build
 # may move to a newer compiler -- so moving it means running an analysis on a
 # Windows machine with an old runtime first.
 dependencies = [
@@ -104,6 +104,11 @@ git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--mat
 [tool.hatch.build.targets.wheel]
 packages = ["gvhelper"]
 
+# Beside the package, not in it: see `_gvhelper_msvc.py`.
+[tool.hatch.build.targets.wheel.force-include]
+"_gvhelper_msvc.py" = "_gvhelper_msvc.py"
+"_gvhelper_msvc.pth" = "_gvhelper_msvc.pth"
+
 [tool.hatch.build.targets.sdist]
 # The sdist is the source of the *Python package*; the git tag is the source
 # snapshot of the project. `launcher/` is a macOS GUI app with a 300 KB icon in
@@ -119,6 +124,8 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# For `_gvhelper_msvc`, which sits beside the package rather than in it.
+pythonpath = ["."]
 markers = [
     # The one test that runs a real analysis. Registered so the rest of the
     # suite can be run without the engine (`-m "not slow"`), which is what a

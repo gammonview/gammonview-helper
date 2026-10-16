@@ -76,38 +76,6 @@ def _log_when_windowless() -> None:
         sys.stderr = stream
 
 
-def _load_msvc_runtime() -> None:
-    """Load our own copy of Microsoft's C++ runtime before bgsage can load one.
-
-    bgsage's Windows extension is built with MSVC 14.51, and anything built with
-    14.40 or later crashes on import -- an access violation inside
-    `MSVCP140.dll` -- when the runtime it finds is older. Windows searches
-    System32 for it, and plenty of PCs have a 2019 or 2020 runtime there that
-    nothing has updated since. GitHub's runners never do, so only a real machine
-    shows it.
-
-    `msvc-runtime` puts a current set of the DLLs at `sys.prefix`, which nothing
-    searches. Loading this one first is enough: Windows hands every later
-    request for `msvcp140.dll` the copy already in the process.
-
-    A stopgap until the bgsage wheel carries its own runtime, which is the
-    permanent fix. Safe meanwhile because the Windows `bgsage` is pinned
-    exactly, so the pairing is one that has been run; moving that pin means
-    running it again on a machine with an old runtime.
-
-    Keyed on `os.name` rather than `sys.platform`, which the tests set to
-    "win32" to reach the Windows paths of other commands on a Mac.
-    """
-    if os.name != "nt":
-        return
-    import ctypes
-
-    try:
-        ctypes.WinDLL(os.path.join(sys.prefix, "msvcp140.dll"))
-    except OSError:
-        pass  # no copy of our own: the system's may yet be new enough
-
-
 def _banner(word: str) -> None:
     """The word, drawn so that it cannot be mistaken for anything else.
 
@@ -655,7 +623,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     _log_when_windowless()
-    _load_msvc_runtime()
     parser = build_parser()
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
     if not getattr(args, "func", None):
