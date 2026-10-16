@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -16,11 +15,14 @@ namespace GammonView.Installer
     ///
     /// **Settings > Apps** lists whatever has a key under the per-user
     /// `Uninstall` branch, and its Uninstall button runs the command in it. That
-    /// command needs a program that will still be there, and the copy somebody
-    /// downloaded is in Downloads, where it will not be for long -- so the
-    /// installer keeps a copy of itself in `bin`. The same copy is what the
-    /// helper's menu opens to update (`gvhelper/winapp.py`), since nothing
-    /// inside the helper can replace the files it is running from.
+    /// command is the helper's own `uninstall` (`gvhelper/winmaint.py`), run by
+    /// `pythonw.exe` from the venv -- **not a copy of this program**. An
+    /// installer that kept a copy of itself in the root for that, and for the
+    /// menu's Update, was what Windows Defender quarantined as
+    /// `Behavior:Win32/Persistence.A!ml`: an unsigned program copying itself
+    /// into AppData and registering the copy is what malware does too. So this
+    /// program leaves nothing of itself behind but its icon, written out as a
+    /// file for the entry and the shortcut to show.
     ///
     /// **The Start menu shortcut** runs `pythonw.exe -m gvhelper start`, so what
     /// opening it does is decided in the package, which updates, rather than
@@ -29,8 +31,8 @@ namespace GammonView.Installer
     ///
     /// Both are per-user and need no administrator rights, like everything else
     /// the installer makes. Both are written on every install and update, and
-    /// neither failing fails the install: the helper runs without them, and the
-    /// installer itself can always uninstall.
+    /// neither failing fails the install: the helper runs without them, and
+    /// opening the installer again can always uninstall.
     /// </summary>
     public static class AppEntry
     {
@@ -47,6 +49,21 @@ namespace GammonView.Installer
         public static readonly string[] StartArguments = { "-m", "gvhelper", "start" };
 
         /// <summary>
+        /// What Settings' Uninstall gives `pythonw.exe`: `--site` as the task
+        /// has it (`LoginItem.Arguments`), so the unlink reaches the right site.
+        /// </summary>
+        public static List<string> UninstallArguments(string? site)
+        {
+            var args = new List<string> { "-m", "gvhelper" };
+            if (!string.IsNullOrEmpty(site)) { args.Add("--site"); args.Add(site!); }
+            args.Add("uninstall");
+            return args;
+        }
+
+        /// <summary>The name `GammonViewInstaller.csproj` embeds the icon under.</summary>
+        public const string IconResource = "icon.ico";
+
+        /// <summary>
         /// The values of the Settings entry. Pure, so the checks can read them.
         ///
         /// `NoModify` and `NoRepair` because there is nothing to modify, and a
@@ -54,16 +71,16 @@ namespace GammonView.Installer
         /// a third already does. The version is the helper's, which is what the
         /// person can do something about; the installer's own is in its file.
         /// </summary>
-        public static Dictionary<string, object> Values(string installer, string helperVersion,
-            string root, int sizeKb, DateTime today)
+        public static Dictionary<string, object> Values(string pythonw, string icon, string? site,
+            string helperVersion, string root, int sizeKb, DateTime today)
         {
             return new Dictionary<string, object>
             {
                 ["DisplayName"] = DisplayName,
                 ["DisplayVersion"] = helperVersion,
                 ["Publisher"] = "GammonView",
-                ["DisplayIcon"] = installer + ",0",
-                ["UninstallString"] = Shell.Quote(installer) + " --uninstall",
+                ["DisplayIcon"] = icon,
+                ["UninstallString"] = Shell.Quote(pythonw) + " " + Shell.CommandLine(UninstallArguments(site)),
                 ["InstallLocation"] = root,
                 ["URLInfoAbout"] = "https://gammonview.com",
                 ["HelpLink"] = "https://gammonview.com/#/info/helper",
@@ -74,38 +91,21 @@ namespace GammonView.Installer
             };
         }
 
-        /// <summary>
-        /// Keep a copy of this program in `bin`, unless that copy is newer.
-        ///
-        /// Not when it *is* that copy (an update from the menu), and not over a
-        /// newer one: an old download opened again would otherwise swap the
-        /// uninstaller and updater for an older one. Done in a sandboxed run as
-        /// well, since it touches only the root.
-        /// </summary>
-        public static void PlaceSelf()
+        public static void Install(string helperVersion, string? site)
         {
-            var self = Path.GetFullPath(Assembly.GetExecutingAssembly().Location);
-            var copy = Path.GetFullPath(Paths.Installer);
-            if (string.Equals(self, copy, StringComparison.OrdinalIgnoreCase)) return;
-            if (File.Exists(copy))
-            {
-                try
-                {
-                    var theirs = AssemblyName.GetAssemblyName(copy).Version;
-                    var mine = Assembly.GetExecutingAssembly().GetName().Version;
-                    if (theirs != null && mine != null && theirs > mine) return;
-                }
-                catch { /* unreadable: replace it */ }
-            }
-            File.Copy(self, copy, overwrite: true);
+            if (Paths.Sandboxed != null) return;
+            try { WriteIcon(); } catch { }
+            try { WriteUninstallEntry(helperVersion, site); } catch { }
+            try { WriteShortcut(); } catch { }
         }
 
-        public static void Install(string helperVersion)
+        private static void WriteIcon()
         {
-            try { PlaceSelf(); } catch { return; }  // nothing below works without it
-            if (Paths.Sandboxed != null) return;
-            try { WriteUninstallEntry(helperVersion); } catch { }
-            try { WriteShortcut(); } catch { }
+            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(IconResource))
+            {
+                if (stream == null) return;
+                using (var file = File.Create(Paths.Icon)) stream.CopyTo(file);
+            }
         }
 
         /// <summary>Remove both. Throws nothing.</summary>
@@ -117,10 +117,10 @@ namespace GammonView.Installer
             try { if (File.Exists(Shortcut)) File.Delete(Shortcut); } catch { }
         }
 
-        private static void WriteUninstallEntry(string helperVersion)
+        private static void WriteUninstallEntry(string helperVersion, string? site)
         {
-            var values = Values(Paths.Installer, helperVersion, Paths.Root, SizeKb(Paths.Root),
-                DateTime.Now);
+            var values = Values(Paths.Pythonw, Paths.Icon, site, helperVersion, Paths.Root,
+                SizeKb(Paths.Root), DateTime.Now);
             using (var key = Registry.CurrentUser.CreateSubKey(UninstallKey))
             {
                 if (key == null) return;
@@ -171,7 +171,7 @@ namespace GammonView.Installer
                 Set("TargetPath", Paths.Pythonw);
                 Set("Arguments", Shell.CommandLine(StartArguments));
                 Set("WorkingDirectory", Paths.Root);
-                Set("IconLocation", Paths.Installer + ",0");
+                Set("IconLocation", Paths.Icon);
                 Set("Description", "Start GammonView Helper, which analyses your matches on this computer.");
                 t.InvokeMember("Save", BindingFlags.InvokeMethod, null, link, null);
             }
@@ -180,64 +180,6 @@ namespace GammonView.Installer
                 if (link != null && Marshal.IsComObject(link)) Marshal.FinalReleaseComObject(link);
                 if (shell != null && Marshal.IsComObject(shell)) Marshal.FinalReleaseComObject(shell);
             }
-        }
-
-        // MARK: - uninstalling from Settings
-
-        /// <summary>True when this process is the copy in `bin`.</summary>
-        public static bool RunningFromRoot()
-        {
-            var self = Path.GetFullPath(Assembly.GetExecutingAssembly().Location);
-            var root = Path.GetFullPath(Paths.Root).TrimEnd('\\') + "\\";
-            return self.StartsWith(root, StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// Run the uninstall from a copy in `%TEMP%`, and say whether one started.
-        ///
-        /// Settings starts the copy in `bin`, and the uninstall deletes `bin`:
-        /// Windows will not delete a program that is running, so the copy in
-        /// `bin` hands over to one outside the root and exits. `--temporary`
-        /// tells that one to delete itself when it closes.
-        /// </summary>
-        public static bool HandOffUninstall()
-        {
-            try
-            {
-                var temp = Path.Combine(Path.GetTempPath(),
-                    "GammonView-Uninstall-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".exe");
-                File.Copy(Assembly.GetExecutingAssembly().Location, temp);
-                Process.Start(new ProcessStartInfo(temp, "--uninstall --temporary")
-                {
-                    UseShellExecute = false,
-                    WorkingDirectory = Path.GetTempPath(),
-                })?.Dispose();
-                return true;
-            }
-            catch { return false; }
-        }
-
-        /// <summary>
-        /// Delete this program once it has exited: a hidden `cmd` that waits two
-        /// seconds, then deletes it. `%TEMP%` is cleaned eventually anyway; this
-        /// is so that "eventually" is not "never" on a machine nobody cleans.
-        /// </summary>
-        public static void DeleteSelfLater()
-        {
-            try
-            {
-                var self = Assembly.GetExecutingAssembly().Location;
-                Process.Start(new ProcessStartInfo("cmd.exe",
-                    // Quoted for cmd, not by `Shell.Quote`'s rules: what
-                    // matters to cmd is an `&` in a user name, not a space.
-                    "/d /c ping -n 3 127.0.0.1 >nul & del /f /q \"" + self + "\"")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WorkingDirectory = Path.GetTempPath(),
-                })?.Dispose();
-            }
-            catch { }
         }
     }
 }

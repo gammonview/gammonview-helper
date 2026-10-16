@@ -11,8 +11,10 @@ code they cannot see is worth nothing next to a sentence telling them what to do
 from __future__ import annotations
 
 import json
+import subprocess
 
 import httpx
+
 import pytest
 import respx
 
@@ -580,33 +582,57 @@ def test_a_failed_update_says_why(capsys, monkeypatch):
     assert "error: no network" in capsys.readouterr().out
 
 
-def test_update_on_windows_sends_an_installer_install_to_the_installer(capsys, monkeypatch):
-    """The login item is running out of the venv an update would replace."""
-    from gvhelper import cli
-    monkeypatch.setattr(cli, "__version__", "0.7.2")
-    update = _release(monkeypatch, "0.8.0")
-    monkeypatch.setattr(cli.sys, "platform", "win32")
-    monkeypatch.setattr(update, "installer_root", lambda helper: "root")
-    monkeypatch.setattr(update, "install", lambda *a: pytest.fail("installed under a running helper"))
-    from gvhelper import winapp
-    monkeypatch.setattr(winapp, "installer", lambda root: None)
-    assert cli.main(["update"]) == 1
-    assert "download the GammonView" in capsys.readouterr().out
-
-
-def test_update_on_windows_opens_the_installers_own_copy(capsys, monkeypatch):
+def test_update_on_windows_hands_the_update_to_a_process_outside_the_venv(
+        capsys, monkeypatch, tmp_path):
+    """The login item, and this command, run out of the venv an update replaces."""
     from gvhelper import cli, winapp
     monkeypatch.setattr(cli, "__version__", "0.7.2")
     update = _release(monkeypatch, "0.8.0")
     monkeypatch.setattr(cli.sys, "platform", "win32")
-    monkeypatch.setattr(update, "installer_root", lambda helper: "root")
+    monkeypatch.setattr(update, "installer_root", lambda helper: tmp_path)
     monkeypatch.setattr(update, "install", lambda *a: pytest.fail("installed under a running helper"))
-    opened = []
-    monkeypatch.setattr(winapp, "installer", lambda root: f"{root}/bin/GammonView-Installer.exe")
-    monkeypatch.setattr(winapp, "open_installer", lambda path: opened.append(path) or True)
+    started = []
+    monkeypatch.setattr(winapp, "start_update",
+                        lambda root, version, python: started.append((root, version)) or True)
     assert cli.main(["update"]) == 0
-    assert opened == ["root/bin/GammonView-Installer.exe"]
-    assert "Opening the GammonView installer" in capsys.readouterr().out
+    assert started == [(tmp_path, "0.8.0")]
+    assert "in the background" in capsys.readouterr().out
+
+
+def test_update_on_windows_that_cannot_start_sends_the_person_to_the_installer(
+        capsys, monkeypatch, tmp_path):
+    from gvhelper import cli, winapp
+    monkeypatch.setattr(cli, "__version__", "0.7.2")
+    update = _release(monkeypatch, "0.8.0")
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(update, "installer_root", lambda helper: tmp_path)
+    monkeypatch.setattr(winapp, "start_update", lambda *a: False)
+    assert cli.main(["update"]) == 1
+    assert "download the GammonView" in capsys.readouterr().out
+
+
+def test_uninstall_is_for_windows(capsys, monkeypatch):
+    monkeypatch.setattr(cli.sys, "platform", "darwin")
+    assert cli.main(["uninstall", "--yes"]) == 2
+    assert "installer" in capsys.readouterr().out
+
+
+def test_uninstall_unlinks_first_then_removes_the_rest(capsys, monkeypatch, tmp_path):
+    """The token is needed to remove the account's row, and the files hold it."""
+    from gvhelper import winapp, winmaint
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(winapp, "install_root", lambda: tmp_path)
+    monkeypatch.setattr(winapp, "current_sid", lambda: "S-1-5-21-1")
+    order = []
+    monkeypatch.setattr(cli, "unlink", lambda cfg: order.append("unlink") or ("removed", None))
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: order.append(argv[1]))
+    monkeypatch.setattr(winmaint, "stop_everything_under",
+                        lambda dirs, spare: order.append("stop"))
+    monkeypatch.setattr(winmaint, "remove_app_entry", lambda: order.append("entry"))
+    monkeypatch.setattr(winmaint, "delete_later", lambda root: order.append(("delete", root)))
+    assert cli.main(["uninstall", "--yes"]) == 0
+    assert order == ["unlink", "/End", "/Delete", "stop", "entry", ("delete", tmp_path)]
+    assert "also been removed from your account" in capsys.readouterr().out
 
 
 def test_start_on_windows_starts_the_task_and_says_where_the_icon_is(monkeypatch):

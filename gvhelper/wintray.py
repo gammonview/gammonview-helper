@@ -18,8 +18,8 @@ written here is only where Windows made something different:
 * **Quit just exits.** The task restarts the helper only when it *fails*, so a
   clean exit stays stopped until the next sign-in or the Start menu, which is
   what Quit promises. No `launchctl` equivalent is needed.
-* **Update opens the installer** (`winapp.open_installer`), which can stop this
-  process; nothing inside it can replace the files it is running from.
+* **Update hands off to a process outside the venv** (`winmaint`), which
+  stops this one; nothing inside it can replace the files it is running from.
 """
 
 from __future__ import annotations
@@ -266,7 +266,6 @@ class HelperIcon:
         if version is None:
             return
         root = winapp.install_root()
-        path = winapp.installer(root)
         if root is None:
             winapp.tell((
                 f"GammonView Helper {version} is available",
@@ -274,18 +273,10 @@ class HelperIcon:
                 "it, then run `gammonview-helper update` in a terminal.",
             ))
             return
-        if path is None:
-            # Installed by an installer that predates keeping a copy.
-            winapp.tell((
-                f"GammonView Helper {version} is available",
-                "To update, download the installer from gammonview.com, open it, "
-                "and choose Update.",
-            ))
-            return
         if not self.ask(
             f"Update GammonView Helper to {version}?",
-            "The GammonView installer will open and do the update. It takes a "
-            "minute or two, and the helper starts again when it is done.",
+            "It takes a minute or two. The helper's icon goes away while it "
+            "updates, and comes back when it is done.",
         ):
             return
         if self.control.state == "busy":
@@ -296,8 +287,12 @@ class HelperIcon:
                 "Choose Update again once it has finished.",
             ))
             return
-        if not winapp.open_installer(path):
-            winapp.tell(("The update did not start", f"Could not open {path}."), True)
+        if not winapp.start_update(root, version, (self.release or {}).get("python")):
+            winapp.tell((
+                "The update did not start",
+                "To update, download the installer from gammonview.com, open it, "
+                "and choose Update.",
+            ), True)
 
     # --- Quit ------------------------------------------------------------
 

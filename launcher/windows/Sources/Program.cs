@@ -29,12 +29,9 @@ namespace GammonView.Installer
         private static InstallerWindow? window;
 
         /// <summary>
-        /// Three ways in, besides a double-click:
-        ///
-        /// * `--uninstall`, which Settings > Apps runs (`AppEntry.Values`);
-        /// * `--update`, which the helper's menu runs (`gvhelper/winapp.py`),
-        ///   having already asked -- so it goes straight to the install;
-        /// * `--temporary`, which marks the copy `--uninstall` hands over to.
+        /// A double-click is the only way in. Settings > Apps' Uninstall and the
+        /// menu's Update are the helper's own (`gvhelper/winmaint.py`): this
+        /// program keeps no copy of itself to be opened by them. See `AppEntry`.
         /// </summary>
         [STAThread]
         private static int Main(string[] args)
@@ -42,19 +39,6 @@ namespace GammonView.Installer
             if (Paths.Sandboxed != null
                 && Environment.GetEnvironmentVariable("GAMMONVIEW_INSTALLER_HEADLESS") == "1")
                 return Headless();
-
-            bool Has(string flag) => Array.IndexOf(args, flag) >= 0;
-            var temporary = Has("--temporary");
-            if (Has("--uninstall"))
-            {
-                // Before the mutex, which the copy taking over must be able to take.
-                if (AppEntry.RunningFromRoot() && AppEntry.HandOffUninstall()) return 0;
-                action = Installer.StartUninstall;
-            }
-            else if (Has("--update"))
-            {
-                action = Installer.Install;
-            }
 
             // One at a time. Two copies would run two `uv tool install`s into one
             // directory, and on Windows the second double-click is common: the
@@ -81,7 +65,6 @@ namespace GammonView.Installer
                     Run();
                 };
                 Application.Run(window);
-                if (temporary) AppEntry.DeleteSelfLater();
                 return 0;
             }
         }

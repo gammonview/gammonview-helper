@@ -43,8 +43,8 @@ namespace GammonView.Installer
         public static readonly string Bin = Path.Combine(Root, "bin");
         public static readonly string Uv = Path.Combine(Bin, "uv.exe");
         public static readonly string Helper = Path.Combine(Bin, "gammonview-helper.exe");
-        /// <summary>This program's own copy, for Settings > Apps and the helper's Update. See `AppEntry`.</summary>
-        public static readonly string Installer = Path.Combine(Bin, "GammonView-Installer.exe");
+        /// <summary>The icon Settings > Apps and the shortcut show. See `AppEntry`.</summary>
+        public static readonly string Icon = Path.Combine(Root, "icon.ico");
 
         /// <summary>`UV_TOOL_DIR`: the venv holding the helper and the engine.</summary>
         public static readonly string Tools = Path.Combine(Root, "tools");

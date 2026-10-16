@@ -68,22 +68,18 @@ def test_the_install_root_is_found_from_the_venv(tmp_path):
     (tmp_path / "bin" / "uv.exe").write_bytes(b"")
     assert winapp.install_root(str(venv)) == tmp_path
 
-    assert winapp.installer(tmp_path) is None, "an installer that kept no copy"
-    (tmp_path / "bin" / winapp.INSTALLER_NAME).write_bytes(b"")
-    assert winapp.installer(tmp_path) == tmp_path / "bin" / winapp.INSTALLER_NAME
-    assert winapp.installer(None) is None
 
+def test_an_update_names_this_users_login_item(tmp_path):
+    launched = []
 
-def test_the_installer_is_opened_straight_into_its_update(tmp_path):
-    started = []
-    path = tmp_path / winapp.INSTALLER_NAME
-    assert winapp.open_installer(path, popen=lambda argv, **kw: started.append(argv))
-    assert started == [[str(path), "--update"]]
+    def launch(*args):
+        launched.append(args)
+        return True
 
-    def missing(argv, **kw):
-        raise FileNotFoundError(argv[0])
-
-    assert not winapp.open_installer(path, popen=missing)
+    assert winapp.start_update(tmp_path, "0.9.1", "3.13", sid=lambda: SID, launch=launch)
+    assert launched == [(tmp_path, f"GammonView Helper {SID}", "0.9.1", "3.13")]
+    assert not winapp.start_update(tmp_path, "0.9.1", None, sid=lambda: None, launch=launch), \
+        "no SID, no task to restart"
 
 
 # --- the menu's words --------------------------------------------------------

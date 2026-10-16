@@ -481,14 +481,15 @@ def cmd_update(cfg: Config, args: argparse.Namespace) -> int:
     helper = os.path.abspath(sys.argv[0])
     root = update.installer_root(helper)
     if sys.platform == "win32" and root is not None:
-        # Windows will not replace files a running process has loaded, and the
-        # login item is running out of this very venv. The installer stops it
-        # first; nothing in here can stop the process it is running inside.
+        # Windows will not replace files a running process has loaded, and
+        # this command and the login item both run out of the venv the update
+        # replaces. So it is handed to a process outside it (`winmaint`).
         from . import winapp
 
-        installer = winapp.installer(root)
-        if installer is not None and winapp.open_installer(installer):
-            _say(f"Opening the GammonView installer to update to {version}.")
+        if winapp.start_update(root, version, release.get("python")):
+            _say(f"Updating GammonView Helper to {version} in the background. It takes a")
+            _say("minute or two, and the helper starts again when it is done.")
+            _say(f"Its log is {root / 'logs' / 'update.log'}.")
             return 0
         _say(f"GammonView Helper {version} is out. To update, download the GammonView")
         _say("installer from gammonview.com, open it, and choose Update.")
@@ -510,6 +511,69 @@ def cmd_update(cfg: Config, args: argparse.Namespace) -> int:
     else:
         _say(f"Updated to {version}. If the helper is running, stop it and start it again")
         _say("to use the new version.")
+    return 0
+
+
+def cmd_uninstall(cfg: Config, args: argparse.Namespace) -> int:
+    """Take the helper off this Windows computer: what Settings > Apps runs.
+
+    The installer's own Uninstall, done from inside the package because the
+    installer keeps no copy of itself to be run (see `winmaint`). Same order:
+    unlink first, while there is still a token to do it with, then the login
+    item, then the files -- the last of them left to `cmd`, since the
+    interpreter running this is one of them.
+    """
+    if sys.platform != "win32":
+        _say("`uninstall` is for Windows. On macOS, open the GammonView installer and")
+        _say("choose Uninstall.")
+        return 2
+    import subprocess
+
+    from . import winapp, winmaint
+
+    root = winapp.install_root()
+    if root is None:
+        _say("This copy was not installed by the GammonView installer, so remove it the")
+        _say("way you installed it.")
+        return 1
+    if not args.yes and not winapp.ask(
+        "Uninstall GammonView Helper?",
+        "This removes GammonView Helper from this computer and unlinks it from "
+        "your GammonView account.\n\n"
+        "Your matches and analyses on gammonview.com are not affected.",
+    ):
+        return 1
+
+    account, reason = unlink(cfg)
+    sid = winapp.current_sid()
+    if sid is not None:
+        for verb in ("/End", "/Delete"):
+            extra = ["/F"] if verb == "/Delete" else []
+            subprocess.run(["schtasks", verb, "/TN", winapp.task_name(sid), *extra],
+                           capture_output=True, **winapp.quiet())
+    # This process and the venv's launcher waiting on it are spared; both are
+    # gone by the time `cmd` deletes the root.
+    winmaint.stop_everything_under(
+        [root / "tools", root / "bin", root / "python"], spare={os.getpid(), os.getppid()})
+    winmaint.remove_app_entry()
+
+    if account == "removed":
+        closing = "It has also been removed from your account settings."
+    elif account == "left":
+        closing = (f"It could not be removed from your account settings ({reason}), so it "
+                   "may still be listed there. Use Unlink beside it on gammonview.com.")
+    else:
+        closing = ("It may still be listed in your account settings. Use Unlink beside it "
+                   "on gammonview.com.")
+    message = ("GammonView Helper is no longer on this computer.\n\n" + closing
+               + "\n\nYou can install it again any time from gammonview.com.")
+    if args.yes:
+        _say(message)
+    else:
+        winapp.tell(("Removed", message))
+    # Last, so the wait in `cmd` starts when this process is about to end
+    # rather than while a dialog is open.
+    winmaint.delete_later(root)
     return 0
 
 
@@ -583,6 +647,13 @@ def build_parser() -> argparse.ArgumentParser:
         "update", help="install the version gammonview.com has released, and restart onto it"
     )
     upd.set_defaults(func=cmd_update)
+
+    rm = sub.add_parser(
+        "uninstall",
+        help="remove the helper from this computer (Windows; what Settings > Apps runs)",
+    )
+    rm.add_argument("--yes", action="store_true", help="do not ask first, and print the outcome")
+    rm.set_defaults(func=cmd_uninstall)
     return parser
 
 

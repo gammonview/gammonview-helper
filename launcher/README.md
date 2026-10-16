@@ -217,17 +217,21 @@ when unplugged, end after three days. `LoginItem.cs` has the full list.
 **The running helper is stopped before anything is replaced.** On macOS, `uv
 tool install --force` swaps files under a running helper and nothing notices.
 Windows refuses to replace a loaded DLL, so Update and Uninstall both end the
-task and then every process running out of the install root. For the same
-reason the helper never updates itself on Windows: its menu's **Update** and
-`gammonview-helper update` open the installer with `--update`, and the
-installer does it.
+task and then every process running out of the install root.
 
-**It keeps a copy of itself** in `bin`, because two things need an installer
-that is still there after Downloads has been emptied: the **Settings > Apps**
-entry, whose Uninstall runs `GammonView-Installer.exe --uninstall`, and the
-menu's Update. Settings starts the copy in `bin`, which the uninstall deletes,
-so that copy hands over to one in `%TEMP%` (`--temporary`, which deletes itself
-on close). An older download opened again does not replace a newer copy.
+**It keeps no copy of itself.** An earlier build kept one in `bin` for Settings
+and the menu to run, and Windows Defender quarantined it as
+`Behavior:Win32/Persistence.A!ml`: an unsigned program copying itself into
+AppData and registering the copy is what malware does. So the two things it was
+kept for are the helper's own (`gvhelper/winmaint.py`). The menu's **Update**
+and `gammonview-helper update` hand the update to a stdlib-only script run by
+the base interpreter under `python\`, outside the venv, which ends the task,
+reinstalls with the installer's `uv` and environment, and starts the task again.
+The **Settings > Apps** entry runs `pythonw.exe -m gvhelper uninstall`, which
+unlinks, removes the task, the entry and the shortcut, and leaves a hidden
+`cmd` to delete the root once it has exited. The entry's icon is
+`icon.ico`, written into the root. Opening the installer again still offers
+Update and Uninstall, from wherever it was downloaded to.
 
 **A Start menu shortcut**, "GammonView Helper", runs `pythonw.exe -m gvhelper
 start`: start the task if it is stopped, and say where the icon is. Windows 11

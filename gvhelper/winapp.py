@@ -14,10 +14,9 @@ is frozen and unsigned. `macapp.py` is the same arrangement on macOS.
   login item if it is stopped, and say where the icon is either way. Windows 11
   puts a new notification-area icon in the overflow behind the ^ arrow, so a
   helper that starts in silence looks exactly like one that did not start.
-* **Update from the menu opens the installer.** Windows will not replace files
-  a running process has loaded, and the helper runs out of the very venv an
-  update replaces. The installer keeps a copy of itself in `bin`, stops the
-  helper, updates it and starts it again -- the one sequence that can.
+* **Update from the menu, and Uninstall in Settings, are the helper's own**
+  (`winmaint.py`). The installer keeps no copy of itself to do them: Windows
+  Defender quarantines an unsigned program that copies itself into AppData.
 
 Every `subprocess` call here passes `CREATE_NO_WINDOW`. Under `pythonw.exe`
 there is no console to inherit, so Windows gives each console program it starts
@@ -39,12 +38,7 @@ TASK_PREFIX = "GammonView Helper "
 #: translated into the language Windows is set to.
 MUTEX_NAME = "Local\\GammonViewHelperMenu"
 
-#: The installer's copy of itself, in the install root's `bin`.
-INSTALLER_NAME = "GammonView-Installer.exe"
-
 CREATE_NO_WINDOW = 0x08000000
-DETACHED_PROCESS = 0x00000008
-CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 _WHERE = (
     "Its icon is in the notification area, at the bottom right of the screen. "
@@ -122,7 +116,7 @@ def start(
 
     Started through the task rather than by running the helper here, so that
     it runs as the task always runs it -- restarted on failure, and stopped by
-    the installer's update by name. A task that is already running ignores
+    an update by name. A task that is already running ignores
     `/Run` (`MultipleInstancesPolicy` is `IgnoreNew`), so a double-click
     cannot make two.
     """
@@ -150,26 +144,20 @@ def install_root(prefix: str = sys.prefix) -> Path | None:
     return None
 
 
-def installer(root: Path | None) -> Path | None:
-    """The copy of the installer it keeps for updating, if this one has one."""
-    if root is None:
-        return None
-    path = root / "bin" / INSTALLER_NAME
-    return path if path.is_file() else None
-
-
-def open_installer(path: Path, popen: Callable[..., object] = subprocess.Popen) -> bool:
-    """Start the installer's update, detached: it stops this process.
-
-    True if it was started. `--update` skips the screen asking whether to
-    update or uninstall: the person has just chosen Update.
-    """
-    try:
-        popen([str(path), "--update"], close_fds=True,
-              creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
-    except OSError:
+def start_update(
+    root: Path,
+    version: str,
+    python: str | None,
+    sid: Callable[[], str | None] = current_sid,
+    launch: Callable[..., bool] | None = None,
+) -> bool:
+    """Hand an update to `winmaint`, naming this user's login item. True if started."""
+    me = sid()
+    if me is None:
         return False
-    return True
+    if launch is None:
+        from .winmaint import start_update as launch
+    return launch(root, task_name(me), version, python)
 
 
 # --- dialogs -----------------------------------------------------------------

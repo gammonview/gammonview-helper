@@ -39,13 +39,6 @@ namespace GammonView.Installer
             public Choice(string message) { Message = message; }
         }
 
-        /// <summary>Settings > Apps asked for an uninstall: confirm it, offering nothing else.</summary>
-        public sealed class ConfirmUninstall : InstallerEvent
-        {
-            public string Message { get; }
-            public ConfirmUninstall(string message) { Message = message; }
-        }
-
         public sealed class Finished : InstallerEvent
         {
             public string Title { get; }
@@ -110,25 +103,6 @@ namespace GammonView.Installer
                 + "Update it to the current version, or remove it completely."));
         }
 
-        /// <summary>What `--uninstall` opens on: Settings > Apps' Uninstall button.</summary>
-        public static void StartUninstall(Action<InstallerEvent> emit)
-        {
-            if (!IsInstalled)
-            {
-                // A Settings entry outliving its install: tidy it, and say so.
-                LoginItem.Remove();
-                AppEntry.Remove();
-                emit(new InstallerEvent.Finished("Removed",
-                    "GammonView Helper is not installed on this computer, so there was nothing "
-                    + "to remove."));
-                return;
-            }
-            emit(new InstallerEvent.ConfirmUninstall(
-                "This removes GammonView Helper from this computer and unlinks it from your "
-                + "GammonView account.\n\n"
-                + "Your matches and analyses on gammonview.com are not affected."));
-        }
-
         public static void Install(Action<InstallerEvent> emit) => Install(emit, pair: true);
 
         /// <param name="pair">
@@ -157,7 +131,7 @@ namespace GammonView.Installer
 
                 emit(new InstallerEvent.Step("Almost there", "Starting GammonView Helper…"));
                 LoginItem.Install(manifest.Site);
-                AppEntry.Install(manifest.Version);
+                AppEntry.Install(manifest.Version, manifest.Site);
 
                 var linked = IsLinked(manifest);
                 if (!pair)

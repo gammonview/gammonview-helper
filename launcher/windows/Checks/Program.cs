@@ -224,15 +224,21 @@ Check("escape sequences are stripped", Shell.Plain("\u001B[2K\u001B[1mResolved\u
 // --- AppEntry ---
 
 Console.WriteLine("AppEntry -- Settings > Apps, and the Start menu");
-var installerCopy = @"C:\Users\Jo Smith\AppData\Local\GammonView\bin\GammonView-Installer.exe";
-var entry = AppEntry.Values(installerCopy, "0.9.0", @"C:\Users\Jo Smith\AppData\Local\GammonView",
-    81234, new DateTime(2026, 10, 12));
-Check("Uninstall runs the kept copy, quoted for the space in the name",
-    (string)entry["UninstallString"] == "\"" + installerCopy + "\" --uninstall");
-Check("...and that command line splits back into the copy and the flag",
-    Same(LoginItem.SplitCommandLine((string)entry["UninstallString"]), installerCopy, "--uninstall"));
+var venvPythonw = @"C:\Users\Jo Smith\AppData\Local\GammonView\tools\gammonview-helper\Scripts\pythonw.exe";
+var icon = @"C:\Users\Jo Smith\AppData\Local\GammonView\icon.ico";
+var entry = AppEntry.Values(venvPythonw, icon, "https://gammonview.com", "0.9.0",
+    @"C:\Users\Jo Smith\AppData\Local\GammonView", 81234, new DateTime(2026, 10, 12));
+Check("Uninstall runs the helper's own uninstall, quoted for the space in the name",
+    (string)entry["UninstallString"]
+        == "\"" + venvPythonw + "\" -m gvhelper --site https://gammonview.com uninstall");
+Check("...and that command line splits back into the interpreter and its arguments",
+    Same(LoginItem.SplitCommandLine((string)entry["UninstallString"]),
+        venvPythonw, "-m", "gvhelper", "--site", "https://gammonview.com", "uninstall"));
+Check("no site means no flag on Uninstall either",
+    Same(AppEntry.UninstallArguments(null), "-m", "gvhelper", "uninstall"));
 Check("the version shown is the helper's", (string)entry["DisplayVersion"] == "0.9.0");
-Check("the icon is the installer's", (string)entry["DisplayIcon"] == installerCopy + ",0");
+Check("the icon is the file written beside the helper, not a copy of the installer",
+    (string)entry["DisplayIcon"] == icon);
 Check("no Modify or Repair buttons", (int)entry["NoModify"] == 1 && (int)entry["NoRepair"] == 1);
 Check("the size is a number of kilobytes", entry["EstimatedSize"] is int kb && kb == 81234);
 Check("the date is the registry's yyyyMMdd", (string)entry["InstallDate"] == "20261012");
@@ -241,8 +247,8 @@ Check("per user, under the branch Settings reads",
     AppEntry.UninstallKey.StartsWith(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\"));
 Check("the shortcut runs `start`, which the package decides",
     Shell.CommandLine(AppEntry.StartArguments) == "-m gvhelper start");
-Check("the kept copy lives in bin",
-    Paths.Installer == System.IO.Path.Combine(Paths.Bin, "GammonView-Installer.exe"));
+Check("the icon lives in the root, which uninstalling deletes",
+    Paths.Icon == System.IO.Path.Combine(Paths.Root, "icon.ico"));
 Check("the task's description points at Settings",
     LoginItem.Document("p", "w", null, "u", "S-1-5-21-1").Contains("uninstall GammonView Helper in Settings"));
 
