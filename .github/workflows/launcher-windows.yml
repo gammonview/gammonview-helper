@@ -79,9 +79,14 @@ jobs:
           # `python -m gvhelper` must import from the venv the task points at.
           & "$root\tools\gammonview-helper\Scripts\python.exe" -m gvhelper --version
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          # The copy Settings > Apps uninstalls with and the menu updates with.
-          $copy = "$root\bin\GammonView-Installer.exe"
-          if (-not (Test-Path $copy)) { Write-Error "no $copy"; exit 1 }
+          # Settings > Apps runs the helper's own `uninstall`, so the pinned
+          # helper must have it -- and the installer must leave no copy of
+          # itself, which is what Defender quarantined.
+          & "$root\tools\gammonview-helper\Scripts\python.exe" -m gvhelper uninstall --help
+          if ($LASTEXITCODE -ne 0) { Write-Error "the pinned helper has no uninstall"; exit 1 }
+          if (Test-Path "$root\bin\GammonView-Installer.exe") {
+            Write-Error "the installer copied itself into the root"; exit 1
+          }
 
       - uses: actions/upload-artifact@v4
         with:
