@@ -50,7 +50,7 @@ namespace GammonView.Installer
             AutoScaleDimensions = new SizeF(96f, 96f);
             AutoScaleMode = AutoScaleMode.Dpi;
             Text = "GammonView Helper";
-            Font = new Font("Segoe UI", 9.75f);
+            Font = BodyFont();
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -61,6 +61,18 @@ namespace GammonView.Installer
             Build();
             ResumeLayout(false);
         }
+
+        /// <summary>
+        /// The body font, handed to every fixed-size label rather than inherited.
+        ///
+        /// A label with `AutoSize = false` that took the form's font was scaled
+        /// twice: at 200% the detail line came out 4x as tall as laid out, and,
+        /// being above the word card, painted it over -- the confirmation word
+        /// was simply not on screen. Labels with a font of their own, and every
+        /// other control, scaled once. Seen on a real Windows 11 laptop; never on
+        /// CI, whose runner has no display scaling to double.
+        /// </summary>
+        private static Font BodyFont() => new Font("Segoe UI", 9.75f);
 
         private void Build()
         {
@@ -78,6 +90,7 @@ namespace GammonView.Installer
 
             // Fixed height: a detail line that grows from one line to three
             // would move the bar and the buttons under the pointer.
+            detail.Font = BodyFont();
             detail.ForeColor = SystemColors.GrayText;
             detail.AutoSize = false;
             detail.SetBounds(inset, 100, width, 92);
@@ -86,6 +99,7 @@ namespace GammonView.Installer
             progress.MarqueeAnimationSpeed = 30;
             progress.SetBounds(inset, 196, width, 14);
 
+            notice.Font = BodyFont();
             notice.ForeColor = Color.DarkOrange;
             notice.AutoSize = false;
             notice.SetBounds(inset, 216, width, 36);
@@ -109,6 +123,7 @@ namespace GammonView.Installer
             wordLabel.SetBounds(0, 12, width - 2, 44);
             wordCard.Controls.Add(wordLabel);
 
+            wordCaption.Font = BodyFont();
             wordCaption.ForeColor = SystemColors.GrayText;
             wordCaption.TextAlign = ContentAlignment.MiddleCenter;
             wordCaption.AutoSize = false;
