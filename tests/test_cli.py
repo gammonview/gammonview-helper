@@ -16,7 +16,7 @@ import httpx
 import pytest
 import respx
 
-from gvhelper import cli, store
+from gvhelper import cli, store, winlog
 from gvhelper.config import Config
 
 RELAY = "https://example.test/accounts/relay"
@@ -623,7 +623,7 @@ def test_a_windowless_helper_writes_to_a_log(monkeypatch, tmp_path):
     """`pythonw` has no stdout; the Windows login item must still leave a record."""
     monkeypatch.setattr(cli.sys, "stdout", None)
     monkeypatch.setattr(cli.sys, "stderr", None)
-    cli._log_when_windowless()
+    winlog.log_when_windowless()
     try:
         cli._say("polling")
         assert cli.sys.stdout is cli.sys.stderr
@@ -637,10 +637,10 @@ def test_a_log_past_its_limit_is_set_aside(monkeypatch, tmp_path):
     log = tmp_path / "gv" / "logs" / "helper.log"
     log.parent.mkdir(parents=True)
     log.write_text("x" * 20)
-    monkeypatch.setattr(cli, "LOG_LIMIT", 10)
+    monkeypatch.setattr(winlog, "LOG_LIMIT", 10)
     monkeypatch.setattr(cli.sys, "stdout", None)
     monkeypatch.setattr(cli.sys, "stderr", None)
-    cli._log_when_windowless()
+    winlog.log_when_windowless()
     cli.sys.stdout.close()
     assert (log.parent / "helper.log.1").read_text() == "x" * 20
     assert log.read_text() == ""
@@ -648,5 +648,5 @@ def test_a_log_past_its_limit_is_set_aside(monkeypatch, tmp_path):
 
 def test_a_console_is_left_alone(capsys):
     before = cli.sys.stdout
-    cli._log_when_windowless()
+    winlog.log_when_windowless()
     assert cli.sys.stdout is before

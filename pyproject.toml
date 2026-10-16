@@ -59,7 +59,7 @@ classifiers = [
 #
 # On Windows, `bgsage` is pinned exactly and `msvc-runtime` comes with it: the
 # engine's extension crashes against a C++ runtime older than the compiler it
-# was built with, and many PCs have one. `_gvhelper_msvc.py`, run from a `.pth`
+# was built with, and many PCs have one. `_gvhelper_startup.py`, run from a `.pth`
 # file at every interpreter start, loads the bundled copy first. The pin is what makes that safe -- each bgsage build
 # may move to a newer compiler -- so moving it means running an analysis on a
 # Windows machine with an old runtime first.
@@ -104,10 +104,10 @@ git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--mat
 [tool.hatch.build.targets.wheel]
 packages = ["gvhelper"]
 
-# Beside the package, not in it: see `_gvhelper_msvc.py`.
+# Beside the package, not in it: see `_gvhelper_startup.py`.
 [tool.hatch.build.targets.wheel.force-include]
-"_gvhelper_msvc.py" = "_gvhelper_msvc.py"
-"_gvhelper_msvc.pth" = "_gvhelper_msvc.pth"
+"_gvhelper_startup.py" = "_gvhelper_startup.py"
+"_gvhelper_startup.pth" = "_gvhelper_startup.pth"
 
 [tool.hatch.build.targets.sdist]
 # The sdist is the source of the *Python package*; the git tag is the source
@@ -124,7 +124,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# For `_gvhelper_msvc`, which sits beside the package rather than in it.
+# For `_gvhelper_startup`, which sits beside the package rather than in it.
 pythonpath = ["."]
 markers = [
     # The one test that runs a real analysis. Registered so the rest of the

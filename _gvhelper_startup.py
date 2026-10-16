@@ -1,7 +1,18 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Nicholas Vlamis
 
-"""Load our own copy of Microsoft's C++ runtime before bgsage can load one.
+"""What every Python process in the helper's environment does first, on Windows.
+
+Run from `_gvhelper_startup.pth`, which site-packages reads at the start of
+every interpreter here -- the helper, and each engine worker it starts. Those
+workers are the reason: on Windows a pool worker is a fresh interpreter that
+never passes through `gvhelper.cli`, and two fixes made there kept the helper
+alive while every worker died. The second, `stderr`, is in
+`gvhelper/winlog.py`; the first is below. This is a top-level module rather
+than part of `gvhelper` so that a console process, which needs neither, does
+not import the package.
+
+**Load our own copy of Microsoft's C++ runtime before bgsage can load one.**
 
 bgsage's Windows extension is built with MSVC 14.51, and anything built with
 14.40 or later crashes on import -- an access violation inside `MSVCP140.dll`
@@ -13,14 +24,6 @@ runners never do, so only a real machine shows it.
 searches. Loading this one first is enough: Windows hands every later request
 for `msvcp140.dll` the copy already in the process.
 
-**Why a `.pth` file runs this, and not the helper's own startup.** The engine
-runs in a process pool, and on Windows each worker is a fresh interpreter that
-never passes through `gvhelper.cli` -- the first fix did it there, and the main
-process survived while every worker crashed. `_gvhelper_msvc.pth` in
-site-packages is read at the start of every interpreter in this environment,
-workers included. It is a top-level module rather than part of `gvhelper` so
-that start does not import the package.
-
 A stopgap until the bgsage wheel carries its own runtime, which is the
 permanent fix. Safe meanwhile because the Windows `bgsage` is pinned exactly
 (`pyproject.toml`), so the pairing is one that has been run; moving that pin
@@ -31,7 +34,7 @@ import os
 import sys
 
 
-def load() -> None:
+def load_msvc_runtime() -> None:
     # `os.name` rather than `sys.platform`, which the tests set to "win32" to
     # reach the Windows paths of other commands on a Mac.
     if os.name != "nt":
@@ -44,4 +47,14 @@ def load() -> None:
         pass  # no copy of our own: the system's may yet be new enough
 
 
-load()
+def give_stderr() -> None:
+    """A `pythonw` process -- the helper or one of its workers -- gets the log."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    from gvhelper.winlog import log_when_windowless
+
+    log_when_windowless()
+
+
+load_msvc_runtime()
+give_stderr()
