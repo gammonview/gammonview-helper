@@ -646,6 +646,37 @@ def test_a_log_past_its_limit_is_set_aside(monkeypatch, tmp_path):
     assert log.read_text() == ""
 
 
+def test_windows_loads_the_bundled_cpp_runtime_first(monkeypatch, tmp_path):
+    """bgsage crashes against an old system `msvcp140.dll`; ours must win."""
+    import ctypes
+
+    loaded = []
+    monkeypatch.setattr(cli.os, "name", "nt")
+    monkeypatch.setattr(cli.sys, "prefix", str(tmp_path))
+    monkeypatch.setattr(ctypes, "WinDLL", loaded.append, raising=False)
+    cli._load_msvc_runtime()
+    assert loaded == [str(tmp_path / "msvcp140.dll")]
+
+
+def test_a_missing_bundled_runtime_is_not_fatal(monkeypatch):
+    import ctypes
+
+    def missing(path):
+        raise OSError(126, "not found")
+
+    monkeypatch.setattr(cli.os, "name", "nt")
+    monkeypatch.setattr(ctypes, "WinDLL", missing, raising=False)
+    cli._load_msvc_runtime()
+
+
+def test_off_windows_no_runtime_is_loaded(monkeypatch):
+    import ctypes
+
+    monkeypatch.setattr(cli.sys, "platform", "win32")  # what other tests pretend
+    monkeypatch.setattr(ctypes, "WinDLL", lambda path: pytest.fail(path), raising=False)
+    cli._load_msvc_runtime()
+
+
 def test_a_console_is_left_alone(capsys):
     before = cli.sys.stdout
     cli._log_when_windowless()

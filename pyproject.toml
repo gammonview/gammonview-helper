@@ -56,12 +56,21 @@ classifiers = [
 # 1.5.1, too, any HedgeHog download failed with `orientation mismatch`.) An
 # existing install keeps whatever it resolved first, so the floor is what
 # moves it.
+#
+# On Windows, `bgsage` is pinned exactly and `msvc-runtime` comes with it: the
+# engine's extension crashes against a C++ runtime older than the compiler it
+# was built with, and many PCs have one. `_load_msvc_runtime` in `cli.py` loads
+# the bundled copy first. The pin is what makes that safe -- each bgsage build
+# may move to a newer compiler -- so moving it means running an analysis on a
+# Windows machine with an old runtime first.
 dependencies = [
     "gammonview[engine]>=2.0.2",
     "httpx>=0.27",
     "keyring>=25.0",
     "rumps>=0.4; sys_platform == 'darwin'",
     "pystray>=0.19; sys_platform == 'win32'",
+    "bgsage==2.0.20260907; sys_platform == 'win32'",
+    "msvc-runtime>=14.44; sys_platform == 'win32'",
 ]
 
 [project.urls]
