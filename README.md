@@ -140,13 +140,16 @@ records the four choices in it that are not boilerplate.
 gammonview-helper update     # install the version gammonview.com has released
 gammonview-helper status     # what is configured, and is the link still alive
 gammonview-helper unlink     # unlink this computer from its account
+gammonview-helper uninstall  # Windows: remove the helper (what Settings > Apps runs)
 ```
 
 `update` installs exactly the version gammonview.com offers, not simply the
-newest on PyPI, and on a Mac restarts the login item onto it. Elsewhere, stop
-the running helper and start it again afterwards. It works for an installer
-install and a `uv tool` one; for anything else it says to update the way you
-installed it.
+newest on PyPI, and on a Mac restarts the login item onto it. On Windows, an
+installer install is updated in the background and its login item restarted,
+since nothing can replace the files a running helper holds; elsewhere, stop the
+running helper and start it again afterwards. It works for an installer install
+and a `uv tool` one; for anything else it says to update the way you installed
+it.
 
 `unlink` does both halves: it tells the site to drop this computer, then
 forgets the credentials here. If it cannot reach the site it still forgets the
