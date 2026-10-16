@@ -1,6 +1,7 @@
 """What every interpreter in the helper's environment does first (`_gvhelper_startup.py`)."""
 
 import ctypes
+import os
 import sys
 
 import pytest
@@ -27,6 +28,7 @@ def test_a_missing_bundled_runtime_is_not_fatal(monkeypatch):
     startup.load_msvc_runtime()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="on Windows the runtime is loaded")
 def test_off_windows_no_runtime_is_loaded(monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")  # what other tests pretend
     monkeypatch.setattr(ctypes, "WinDLL", lambda path: pytest.fail(path), raising=False)

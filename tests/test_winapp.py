@@ -153,6 +153,8 @@ def test_the_menu_builds_in_every_state(monkeypatch):
 
     from gvhelper.config import Config
 
+    # A development build is never offered an update, and CI builds one.
+    monkeypatch.setattr(wintray, "__version__", "0.8.0")
     menu = wintray.HelperIcon(Config(), Control(), threading.Thread(target=lambda: None))
     for state in ("starting", "unlinked", "idle", "busy", "retrying"):
         menu.control.state = state
