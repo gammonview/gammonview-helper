@@ -188,13 +188,18 @@ def install(
 def restart_login_item(
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> bool:
-    """Restart the macOS login item onto the new code. True if it was restarted.
+    """Restart the login item onto the new code. True if it was restarted.
 
     `kickstart -k` stops the running copy and starts the job again, so a helper
     updated from a terminal stops running the old code without anybody logging
-    out. False where there is no login item to restart: not macOS, or a helper
-    that is not set up to start at login.
+    out. On Linux every running helper is sent SIGHUP, which `run` answers by
+    `exec`ing itself. False where there is no login item to restart: Windows
+    (see `winmaint`), or a helper that is not set up to start at login.
     """
+    if sys.platform.startswith("linux"):
+        from . import linuxapp
+
+        return linuxapp.restart_running()
     if sys.platform != "darwin":
         return False
     from .tray import LAUNCHD_LABEL

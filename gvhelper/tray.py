@@ -3,11 +3,12 @@
 
 """The menu-bar item: what the helper is doing, whose it is, and its controls.
 
-macOS and Windows: the platforms with an installer and a login item, which
-makes them the places the helper runs with no terminal. Without this, the only
+macOS, Windows and Linux desktops: the places it is set up as a login item,
+which makes them the places the helper runs with no terminal. Without this, the only
 way to stop it is `launchctl` or Task Manager, and the only way to tell whether
-it is working is the website. This module is the macOS menu and the words both
-share; `wintray.py` draws the same menu in the Windows notification area.
+it is working is the website. This module is the macOS menu and the words all
+three share; `wintray.py` draws the same menu in the Windows notification area, and
+`linuxtray.py` as a status icon on a Linux desktop.
 
 **It lives here and not in the launcher.** The launcher is unsigned and frozen
 -- every change to it costs each user a Gatekeeper dialog -- while this package
@@ -41,7 +42,7 @@ import webbrowser
 from importlib.resources import files
 from typing import Callable
 
-from . import __version__
+from . import __version__, update
 from .config import Config, machine_name
 from .daemon import Control, sign_off
 from .store import load_token
@@ -75,6 +76,10 @@ def available() -> bool:
             import rumps  # noqa: F401
         elif sys.platform == "win32":
             import pystray  # noqa: F401
+        elif sys.platform.startswith("linux"):
+            from . import linuxtray
+
+            return linuxtray.available()
         else:
             return False
     except ImportError:
@@ -125,8 +130,8 @@ def status_line(control: Control, percent: bool = True) -> str:
 class _MenuLink:
     """`cli.pair`'s narrator, for a menu: every event goes to the main thread.
 
-    The pairing flow runs on its own thread (it blocks for up to a minute
-    waiting for the browser), and AppKit may only be touched from the main
+    The pairing flow runs on its own thread (it blocks for as long as the
+    site keeps the request open, waiting for the browser), and AppKit may only be touched from the main
     one, so this puts events on a queue that the menu's timer drains.
     """
 
@@ -150,6 +155,26 @@ def account_line(control: Control) -> str | None:
     return None
 
 
+def link_label(control: Control, linking: bool) -> str:
+    if control.state == "unlinked":
+        return "Linking…" if linking else "Link This Computer…"
+    return "Unlink This Computer…"
+
+
+def link_enabled(control: Control, linking: bool) -> bool:
+    """Not while linking, and not mid-match: see `HelperMenu.refresh`."""
+    if control.state == "unlinked":
+        return not linking
+    return control.state != "busy"
+
+
+def offered(release: dict | None) -> str | None:
+    """The version the Update item offers, if any."""
+    if release is None or not update.newer(release["version"], __version__):
+        return None
+    return release["version"]
+
+
 def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
     """Run `loop` on a background thread and the menu on this one.
 
@@ -159,6 +184,10 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
         from . import wintray
 
         return wintray.run(cfg, control, loop)
+    if sys.platform.startswith("linux"):
+        from . import linuxtray
+
+        return linuxtray.run(cfg, control, loop)
 
     import rumps
     from AppKit import NSApplication, NSApplicationActivationPolicyAccessory

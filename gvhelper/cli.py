@@ -11,7 +11,9 @@ Four commands, and the first one is the only one most people will ever type:
     gammonview-helper unlink     # forget this machine's credentials
 
 And `start`, which nobody types: it is what opening "GammonView Helper" in
-Applications runs (`macapp.py`), or in the Windows Start menu (`winapp.py`).
+Applications runs (`macapp.py`), in the Windows Start menu (`winapp.py`), or
+in a Linux desktop's applications (`linuxapp.py`). On Linux, where there is no
+installer, `install` and `uninstall` are the installer.
 
 Written for a terminal a non-technical person has been talked into opening. The
 output is sentences rather than log lines, the word to confirm is unmissable,
@@ -255,6 +257,12 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
             if token is None:
                 return 0
 
+    if sys.platform.startswith("linux") and not args.once:
+        from . import linuxapp
+
+        # How `update` in a terminal moves a running helper onto the new code.
+        linuxapp.restart_on_hangup()
+
     # The menu-bar item, where there is a menu bar to put it in. `--once` is a
     # check that must return, and a menu runs until somebody quits it.
     if not args.once and not args.no_menu:
@@ -445,8 +453,13 @@ def cmd_start(cfg: Config, args: argparse.Namespace) -> int:
 
         winapp.tell(winapp.start())
         return 0
+    if sys.platform.startswith("linux"):
+        from . import linuxapp
+
+        linuxapp.tell(linuxapp.start(os.path.abspath(sys.argv[0])))
+        return 0
     if sys.platform != "darwin":
-        _say("`start` is for macOS and Windows. Elsewhere, run `gammonview-helper run`.")
+        _say("`start` is for macOS, Windows and Linux. Elsewhere, run `gammonview-helper run`.")
         return 2
     from . import macapp
 
@@ -523,9 +536,11 @@ def cmd_uninstall(cfg: Config, args: argparse.Namespace) -> int:
     item, then the files -- the last of them left to `cmd`, since the
     interpreter running this is one of them.
     """
+    if sys.platform.startswith("linux"):
+        return _uninstall_linux(cfg, args)
     if sys.platform != "win32":
-        _say("`uninstall` is for Windows. On macOS, open the GammonView installer and")
-        _say("choose Uninstall.")
+        _say("`uninstall` is for Windows and Linux. On macOS, open the GammonView")
+        _say("installer and choose Uninstall.")
         return 2
     import subprocess
 
@@ -574,6 +589,112 @@ def cmd_uninstall(cfg: Config, args: argparse.Namespace) -> int:
     # Last, so the wait in `cmd` starts when this process is about to end
     # rather than while a dialog is open.
     winmaint.delete_later(root)
+    return 0
+
+
+def _entry_point() -> str | None:
+    """The installed `gammonview-helper` command, which desktop files can run.
+
+    Not a checkout's `python -m gvhelper`: a login item pointing into somebody's
+    working copy would run whatever is checked out at the next log-in.
+    """
+    helper = os.path.abspath(sys.argv[0])
+    return helper if os.path.basename(helper) == "gammonview-helper" else None
+
+
+def _linked_account(account: str | None, reason: str | None) -> str:
+    if account == "removed":
+        return "It has also been removed from your account settings."
+    if account == "left":
+        return (f"It could not be removed from your account settings ({reason}). "
+                "Use Unlink beside it on gammonview.com.")
+    return "It may still be listed in your account settings. Use Unlink beside it on gammonview.com."
+
+
+def cmd_install(cfg: Config, args: argparse.Namespace) -> int:
+    """Set the helper up on Linux, where there is no installer to do it.
+
+    The second half of `uv tool install gammonview-helper && gammonview-helper
+    install`: link the machine if it is not linked, then what the installers
+    create on the other two -- a login item and something to open (see
+    `linuxapp`) -- and start it.
+    """
+    if not sys.platform.startswith("linux"):
+        _say("`install` is for Linux. On macOS and Windows, download the GammonView")
+        _say("installer from gammonview.com.")
+        return 2
+    from . import linuxapp, linuxtray
+
+    helper = _entry_point()
+    if helper is None:
+        _say("Run this as `gammonview-helper install`, from the copy you installed with `uv tool`.")
+        return 1
+    if not load_token(cfg):
+        code = cmd_link(cfg, argparse.Namespace(name=None, no_browser=False, porcelain=False))
+        if code != 0:
+            return code
+        _say()
+
+    linuxapp.install(helper)
+    _say("GammonView Helper will now start by itself whenever you log in.")
+    desktop = linuxtray.available() and not os.environ.get("SSH_CONNECTION")
+    if not desktop:
+        _say("It will start at your next log-in.")
+        return 0
+    if linuxapp.running():
+        linuxapp.restart_running()
+    else:
+        linuxapp.start(helper)
+    if linuxtray.has_host():
+        _say("It is running now. " + linuxapp.STARTED[1])
+    else:
+        # Also what a locked screen says: GNOME switches extensions off while
+        # it is locked, and the icon comes back on its own when it unlocks.
+        _say("It is running now. Your desktop is not showing status icons at the moment,")
+        _say("so there is no icon yet; it appears when they are shown. On GNOME, status")
+        _say("icons come from the AppIndicator extension, which Ubuntu turns on.")
+    _say("To remove it: gammonview-helper uninstall")
+    return 0
+
+
+def _uninstall_linux(cfg: Config, args: argparse.Namespace) -> int:
+    """`install` undone: unlink, stop, remove the desktop files, then the tool.
+
+    The same order as Windows, for the same reason -- the token is needed to
+    unlink, so that goes first. Unlike Windows, nothing here is in the way of
+    deleting the files this process runs from, so `uv` does it directly.
+    """
+    import subprocess
+
+    from . import linuxapp, update
+
+    helper = _entry_point()
+    if not args.yes:
+        _say("This removes GammonView Helper from this computer and unlinks it from your")
+        _say("GammonView account. Your matches and analyses on gammonview.com are not affected.")
+        try:
+            if input("Remove it? [y/N] ").strip().lower() not in ("y", "yes"):
+                return 1
+        except EOFError:
+            return 1
+
+    account, reason = unlink(cfg)
+    linuxapp.stop_running()
+    linuxapp.remove()
+    _say("GammonView Helper is unlinked, and will no longer start when you log in.")
+    _say(_linked_account(account, reason))
+
+    where = update.target(helper) if helper else None
+    if where is None:
+        _say("This copy was not installed with `uv tool`, so remove its files the way you")
+        _say("installed it.")
+        return 0
+    done = subprocess.run([where.uv, "tool", "uninstall", "gammonview-helper"],
+                          env=where.env, capture_output=True, text=True)
+    if done.returncode != 0:
+        _say("Its files could not be removed: run `uv tool uninstall gammonview-helper`.")
+        return 1
+    _say("Its files have been removed.")
     return 0
 
 
@@ -639,7 +760,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     start = sub.add_parser(
         "start",
-        help="start the login item if it is stopped (macOS and Windows; what the app runs)",
+        help="start the login item if it is stopped (what the app runs)",
     )
     start.set_defaults(func=cmd_start)
 
@@ -648,9 +769,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     upd.set_defaults(func=cmd_update)
 
+    setup = sub.add_parser(
+        "install",
+        help="link, start at log-in, and add to your applications (Linux)",
+    )
+    setup.set_defaults(func=cmd_install)
+
     rm = sub.add_parser(
         "uninstall",
-        help="remove the helper from this computer (Windows; what Settings > Apps runs)",
+        help="remove the helper from this computer (Windows and Linux)",
     )
     rm.add_argument("--yes", action="store_true", help="do not ask first, and print the outcome")
     rm.set_defaults(func=cmd_uninstall)

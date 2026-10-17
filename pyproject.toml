@@ -42,8 +42,10 @@ classifiers = [
 # the ones where the helper runs with no terminal to stop it from. They are
 # base dependencies rather than an extra because the installers are frozen and
 # ask for plain `gammonview-helper`: an extra would never reach a machine they
-# set up. `pystray` brings Pillow, to hand it the icon. Linux gets nothing
-# extra until it gets an installer too.
+# set up. `pystray` brings Pillow, to hand it the icon. On Linux, where
+# `gammonview-helper install` is the installer, `dbus-fast` speaks the
+# status-icon protocol directly (`linuxtray.py` says why not `pystray`), and
+# Pillow is asked for by name to read the icon.
 #
 # Still absent: anything for watching folders. That is v2 (`docs/DesktopHelper.md`,
 # "v1 analyses. It does not watch folders").
@@ -69,6 +71,8 @@ dependencies = [
     "keyring>=25.0",
     "rumps>=0.4; sys_platform == 'darwin'",
     "pystray>=0.19; sys_platform == 'win32'",
+    "dbus-fast>=2.0; sys_platform == 'linux'",
+    "pillow>=10; sys_platform == 'linux'",
     "bgsage==2.0.20260907; sys_platform == 'win32'",
     "msvc-runtime>=14.44; sys_platform == 'win32'",
 ]

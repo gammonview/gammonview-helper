@@ -34,7 +34,15 @@ from . import __version__, update, winapp
 from .config import Config, machine_name
 from .daemon import Control, sign_off
 from .store import load_token
-from .tray import QUIT_GRACE, REFRESH_INTERVAL, account_line, status_line
+from .tray import (
+    QUIT_GRACE,
+    REFRESH_INTERVAL,
+    account_line,
+    link_enabled,
+    link_label,
+    offered,
+    status_line,
+)
 
 #: Windows truncates a notification-area tooltip at 127 characters.
 TOOLTIP_LIMIT = 127
@@ -47,26 +55,6 @@ def icon_path(paused: bool) -> str:
 
 def tooltip(control: Control) -> str:
     return f"GammonView Helper: {status_line(control)}"[:TOOLTIP_LIMIT]
-
-
-def link_label(control: Control, linking: bool) -> str:
-    if control.state == "unlinked":
-        return "Linking…" if linking else "Link This Computer…"
-    return "Unlink This Computer…"
-
-
-def link_enabled(control: Control, linking: bool) -> bool:
-    """Not while linking, and not mid-match: see `tray.HelperMenu.refresh`."""
-    if control.state == "unlinked":
-        return not linking
-    return control.state != "busy"
-
-
-def offered(release: dict | None) -> str | None:
-    """The version the Update item offers, if any."""
-    if release is None or not update.newer(release["version"], __version__):
-        return None
-    return release["version"]
 
 
 def later(fn: Callable, *args) -> None:

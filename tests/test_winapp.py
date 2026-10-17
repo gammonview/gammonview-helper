@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from gvhelper import winapp, wintray
+from gvhelper import tray, winapp, wintray
 from gvhelper.daemon import Control
 
 SID = "S-1-5-21-1004336348-1177238915-682003330-1001"
@@ -113,13 +113,6 @@ def test_link_is_offered_only_when_it_can_do_something():
     assert wintray.link_enabled(c, linking=False)
 
 
-def test_update_is_offered_only_for_a_newer_release(monkeypatch):
-    monkeypatch.setattr(wintray, "__version__", "0.8.0")
-    assert wintray.offered(None) is None
-    assert wintray.offered({"version": "0.8.0"}) is None
-    assert wintray.offered({"version": "0.9.0"}) == "0.9.0"
-
-
 def test_the_icons_ship_with_the_package():
     from pathlib import Path
 
@@ -154,7 +147,7 @@ def test_the_menu_builds_in_every_state(monkeypatch):
     from gvhelper.config import Config
 
     # A development build is never offered an update, and CI builds one.
-    monkeypatch.setattr(wintray, "__version__", "0.8.0")
+    monkeypatch.setattr(tray, "__version__", "0.8.0")
     menu = wintray.HelperIcon(Config(), Control(), threading.Thread(target=lambda: None))
     for state in ("starting", "unlinked", "idle", "busy", "retrying"):
         menu.control.state = state

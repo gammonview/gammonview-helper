@@ -219,7 +219,7 @@ class PairingClient:
         """Ask to be linked. Returns `code`, `secret`, `word`, `choices`.
 
         Unauthenticated, and grants nothing -- all it creates is an offer that
-        expires in a minute and that no account has agreed to.
+        expires in minutes and that no account has agreed to.
         """
         r = _send(self._client, "POST",
             f"{self.cfg.relay_base}/pair/start",

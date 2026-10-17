@@ -23,7 +23,17 @@ uv tool install gammonview-helper
 ```
 
 That pulls in the analysis engine and its neural networks — about 80 MB, and it
-takes a minute or two the first time. Update later with `gammonview-helper
+takes a minute or two the first time.
+
+On a Linux desktop, which has no installer, a second command does what the
+macOS and Windows installers do — links the computer, makes it start whenever
+you log in, adds **GammonView Helper** to your applications, and starts it:
+
+```bash
+uv tool install gammonview-helper && gammonview-helper install
+```
+
+The engine is built for x86-64 Linux only. Update later with `gammonview-helper
 update` (below).
 
 Two other forms, for whoever prefers them:
@@ -93,6 +103,13 @@ these controls:
 
 `run --no-menu` leaves the item out. It is never shown over SSH.
 
+On Windows the same menu is a notification-area icon, and on a Linux desktop a
+status icon in the panel — at the top right on Ubuntu. Linux status icons need a
+panel that hosts them: KDE, Cinnamon, XFCE and Ubuntu's GNOME do; GNOME
+elsewhere needs the AppIndicator extension. Without one the helper runs as
+usual with no icon. GNOME also hides status icons while the screen is locked;
+the helper's comes back when it unlocks.
+
 Run as the login item, the helper also keeps **GammonView Helper** in
 Applications (in `~/Applications` if it cannot write to `/Applications`).
 Opening it starts the helper again after a Quit, or says it is already running.
@@ -140,11 +157,13 @@ records the four choices in it that are not boilerplate.
 gammonview-helper update     # install the version gammonview.com has released
 gammonview-helper status     # what is configured, and is the link still alive
 gammonview-helper unlink     # unlink this computer from its account
-gammonview-helper uninstall  # Windows: remove the helper (what Settings > Apps runs)
+gammonview-helper install    # Linux: link, start at log-in, add to applications
+gammonview-helper uninstall  # Windows and Linux: remove the helper
 ```
 
 `update` installs exactly the version gammonview.com offers, not simply the
-newest on PyPI, and on a Mac restarts the login item onto it. On Windows, an
+newest on PyPI, and on a Mac restarts the login item onto it. On Linux it
+restarts every running helper onto it. On Windows, an
 installer install is updated in the background and its login item restarted,
 since nothing can replace the files a running helper holds; elsewhere, stop the
 running helper and start it again afterwards. It works for an installer install
@@ -175,6 +194,11 @@ Order matters: `unlink` spends the credential that the last line deletes.
 
 Installed with the macOS installer app instead? Open it again and press
 **Uninstall** — it does all four, in that order.
+
+On Windows, use **Uninstall** in Settings > Apps. On Linux,
+`gammonview-helper uninstall` unlinks, stops the helper, removes what `install`
+added, and runs `uv tool uninstall`. Your settings in `~/.config/gammonview/`
+are left behind; delete that directory too to forget the computer completely.
 
 ## Settings
 

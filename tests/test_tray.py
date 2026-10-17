@@ -52,6 +52,12 @@ def test_no_menu_on_windows_without_its_library(monkeypatch):
     monkeypatch.setattr(tray.sys, "platform", "win32")
     monkeypatch.setitem(sys.modules, "pystray", None)
     assert not tray.available()
+
+
+def test_no_menu_on_linux_without_a_display(monkeypatch):
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr(tray.sys, "platform", "linux")
     assert not tray.available()
 
@@ -75,3 +81,10 @@ def test_the_account_line_appears_once_the_site_has_named_it():
     assert tray.account_line(c) == "Linked to me@example.com"
     c.state = "unlinked"
     assert tray.account_line(c) is None, "unlinking clears it before the loop notices"
+
+
+def test_update_is_offered_only_for_a_newer_release(monkeypatch):
+    monkeypatch.setattr(tray, "__version__", "0.8.0")
+    assert tray.offered(None) is None
+    assert tray.offered({"version": "0.8.0"}) is None
+    assert tray.offered({"version": "0.9.0"}) == "0.9.0"
