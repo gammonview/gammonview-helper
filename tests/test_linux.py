@@ -11,6 +11,7 @@ dependency), and the icon where Pillow is.
 
 from __future__ import annotations
 
+import os
 import threading
 from pathlib import Path
 
@@ -77,6 +78,7 @@ def test_a_running_helper_is_told_by_its_command_line(argv, expected):
     assert linuxapp.is_helper_run(argv) is expected
 
 
+@pytest.mark.skipif(os.name == "nt", reason="reads /proc as this user's uid, which Windows has neither of")
 def test_running_reads_proc_and_leaves_out_itself(tmp_path):
     def proc(pid: int, *argv: str) -> None:
         (tmp_path / str(pid)).mkdir()
