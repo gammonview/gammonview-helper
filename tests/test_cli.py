@@ -676,3 +676,30 @@ def test_a_console_is_left_alone(capsys):
     before = cli.sys.stdout
     winlog.log_when_windowless()
     assert cli.sys.stdout is before
+
+
+def test_pause_says_so_when_no_helper_is_running(capsys, monkeypatch):
+    """Nobody is reading the file, so the honest answer is that nothing was
+    paused -- and the request is taken back rather than left lying there."""
+    monkeypatch.setattr(cli, "ANSWER_WAIT", 0.2)
+    monkeypatch.setattr("gvhelper.daemon.FOLLOW_INTERVAL", 0.01)
+    assert _run(["pause"]) == 1
+    assert "not running" in capsys.readouterr().out
+    assert not (cli.config_dir() / "paused").exists()
+
+
+def test_pause_and_resume_reach_a_running_helper(capsys, monkeypatch):
+    from gvhelper import daemon
+
+    monkeypatch.setattr(cli, "ANSWER_WAIT", 2.0)
+    control = daemon.Control(flag=cli.config_dir() / daemon.PAUSE_FILE)
+    control.follow(interval=0.01)
+    try:
+        assert _run(["pause"]) == 0  # not linked, so no sign-off is sent
+        assert control.paused
+        assert "is paused" in capsys.readouterr().out
+        assert _run(["resume"]) == 0
+        assert not control.paused
+        assert "taking matches again" in capsys.readouterr().out
+    finally:
+        control.stop()

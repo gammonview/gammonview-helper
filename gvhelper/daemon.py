@@ -27,6 +27,7 @@ from __future__ import annotations
 import sys
 import threading
 import time
+from pathlib import Path
 
 from . import USER_AGENT, __version__
 from .client import POLL_WAIT, Job, RelayError, Unauthorized, WorkerClient
@@ -63,6 +64,31 @@ PROGRESS_INTERVAL = 1.0
 RETRY_MIN = 2.0
 RETRY_MAX = 60.0
 
+#: The file a terminal pauses a running helper through, in `config_dir()`.
+#:
+#: A file rather than a signal or a socket because it is the one thing that
+#: works the same on macOS, Windows and Linux, and the config directory is
+#: already private to this user. It holds one word: `pause` or `resume` is a
+#: request from `gammonview-helper pause` / `resume`, and the helper answers by
+#: writing `paused` or removing the file. The answer is what lets the command
+#: tell somebody the truth when no helper is running to hear it.
+PAUSE_FILE = "paused"
+PAUSE, RESUME, PAUSED = "pause", "resume", "paused"
+
+#: How often a running helper looks at `PAUSE_FILE`: a stat a second on a
+#: machine that is mostly waiting, and the longest a terminal waits to hear.
+FOLLOW_INTERVAL = 1.0
+
+
+def read_flag(path: Path | None) -> str | None:
+    """What `PAUSE_FILE` says, or None when there is nothing in it to read."""
+    if path is None:
+        return None
+    try:
+        return path.read_text().strip() or None
+    except OSError:
+        return None
+
 
 class Control:
     """What the menu-bar item can ask of the loop, and what it reads back.
@@ -80,12 +106,19 @@ class Control:
     **Stop does not.** Quit is the user saying the machine is wanted for
     something else right now, so the running job is failed with a sentence the
     browser shows, rather than left to time out.
+
+    **`flag` is how a terminal reaches it.** `gammonview-helper pause` runs in
+    another process, so it writes a request into a file (see `PAUSE_FILE`) and
+    `follow` applies it here. The file also mirrors the menu's own Pause, so a
+    helper paused from the menu can be resumed from the terminal and the other
+    way round.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, flag: Path | None = None) -> None:
         self._cond = threading.Condition()
         self._paused = False
         self._stopping = False
+        self._flag = flag
         #: "starting" | "unlinked" | "idle" | "busy" | "paused" | "retrying"
         self.state = "starting"
         #: The running job's counters, or None between jobs.
@@ -108,11 +141,49 @@ class Control:
         with self._cond:
             self._paused = True
             self._cond.notify_all()
+        self._mark(PAUSED)
 
     def resume(self) -> None:
         with self._cond:
             self._paused = False
             self._cond.notify_all()
+        self._mark(None)
+
+    def _mark(self, content: str | None) -> None:
+        """Mirror the state into the flag file, which is also the answer to
+        a request in it. Best effort: a read-only config directory costs the
+        terminal its control and nothing else."""
+        if self._flag is None:
+            return
+        try:
+            if content is None:
+                self._flag.unlink(missing_ok=True)
+            else:
+                self._flag.write_text(content)
+        except OSError:
+            pass
+
+    def follow(self, interval: float = FOLLOW_INTERVAL) -> threading.Thread:
+        """Apply requests from `gammonview-helper pause` / `resume`, on a thread.
+
+        Whatever the file says when this starts is left over from a helper that
+        has gone, so it is cleared: Pause is "not right now", the same as from
+        the menu, and does not outlive the process.
+        """
+        self._mark(None)
+
+        def run() -> None:
+            while not self._stopping:
+                request = read_flag(self._flag)
+                if request == PAUSE:
+                    self.pause()
+                elif request == RESUME:
+                    self.resume()
+                self.sleep(interval)
+
+        thread = threading.Thread(target=run, name="pause-flag", daemon=True)
+        thread.start()
+        return thread
 
     def stop(self) -> None:
         with self._cond:

@@ -156,6 +156,8 @@ records the four choices in it that are not boilerplate.
 ```bash
 gammonview-helper update     # install the version gammonview.com has released
 gammonview-helper status     # what is configured, and is the link still alive
+gammonview-helper pause      # the menu's Pause: finish the current match, take no more
+gammonview-helper resume     # the menu's Resume
 gammonview-helper unlink     # unlink this computer from its account
 gammonview-helper install    # Linux: link, start at log-in, add to applications
 gammonview-helper uninstall  # Windows and Linux: remove the helper

@@ -318,3 +318,41 @@ def test_stop_reaches_a_helper_waiting_to_be_linked(cfg, monkeypatch):
     control = daemon.Control()
     control.stop()
     assert daemon.wait_for_token(cfg, control=control) is None
+
+
+# --- pause and resume, from a terminal ---
+
+def test_a_terminal_request_is_applied_and_answered(tmp_path):
+    """`gammonview-helper pause` writes a word; the running helper acts on it
+    and answers in the same file, which is how the command knows it was heard."""
+    flag = tmp_path / daemon.PAUSE_FILE
+    flag.write_text(daemon.PAUSED)  # left behind by a helper that has gone
+    control = daemon.Control(flag=flag)
+    control.follow(interval=0.01)
+    assert not flag.exists(), "a pause must not outlive the helper that took it"
+
+    flag.write_text(daemon.PAUSE)
+    for _ in range(200):
+        if control.paused:
+            break
+        threading.Event().wait(0.01)
+    assert control.paused
+    assert daemon.read_flag(flag) == daemon.PAUSED
+
+    flag.write_text(daemon.RESUME)
+    for _ in range(200):
+        if not control.paused:
+            break
+        threading.Event().wait(0.01)
+    assert not control.paused and not flag.exists()
+    control.stop()
+
+
+def test_the_menus_pause_is_visible_to_the_terminal(tmp_path):
+    """One state, two controls: Pause from the menu is resumable from `resume`."""
+    flag = tmp_path / daemon.PAUSE_FILE
+    control = daemon.Control(flag=flag)
+    control.pause()
+    assert daemon.read_flag(flag) == daemon.PAUSED
+    control.resume()
+    assert not flag.exists()

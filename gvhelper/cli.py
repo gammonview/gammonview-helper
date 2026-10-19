@@ -10,6 +10,9 @@ Four commands, and the first one is the only one most people will ever type:
     gammonview-helper status     # what is configured, and is the link alive
     gammonview-helper unlink     # forget this machine's credentials
 
+`pause` and `resume` are the menu's Pause and Resume, for a helper with no menu
+to click -- one over SSH, or on a desktop that shows no status icons.
+
 And `start`, which nobody types: it is what opening "GammonView Helper" in
 Applications runs (`macapp.py`), in the Windows Start menu (`winapp.py`), or
 in a Linux desktop's applications (`linuxapp.py`). On Linux, where there is no
@@ -230,7 +233,7 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
     "does this work" check use, and neither can block for a credential that is
     never coming.
     """
-    from .daemon import Control, serve, wait_for_token
+    from .daemon import PAUSE_FILE, Control, serve, wait_for_token
 
     token = load_token(cfg)
     if not token and args.once:
@@ -263,15 +266,77 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
         # How `update` in a terminal moves a running helper onto the new code.
         linuxapp.restart_on_hangup()
 
-    # The menu-bar item, where there is a menu bar to put it in. `--once` is a
-    # check that must return, and a menu runs until somebody quits it.
-    if not args.once and not args.no_menu:
+    # `--once` is a check that must return, so it neither follows `pause` nor
+    # draws a menu, which runs until somebody quits it.
+    if args.once:
+        return loop(None)
+    control = Control(flag=config_dir() / PAUSE_FILE)
+    control.follow()
+    if not args.no_menu:
         from . import tray
 
         if tray.available():
-            control = Control()
             return tray.run(cfg, control, lambda: loop(control))
-    return loop(None)
+    return loop(control)
+
+
+#: How long `pause` and `resume` wait for the running helper to answer: two of
+#: its looks at the file, and a little over.
+ANSWER_WAIT = 2.5
+
+
+def _ask_running_helper(request: str, answered) -> bool:
+    """Write `request` into the pause file and wait for the helper to answer.
+
+    False when nothing answered, meaning no helper is running in this config
+    directory. The request is taken back then, so a helper started later does
+    not find it -- though it would clear it anyway (`Control.follow`).
+    """
+    from .daemon import FOLLOW_INTERVAL, PAUSE_FILE, read_flag
+
+    flag = config_dir() / PAUSE_FILE
+    flag.write_text(request)
+    deadline = time.monotonic() + max(ANSWER_WAIT, 2 * FOLLOW_INTERVAL + 0.5)
+    while time.monotonic() < deadline:
+        if answered(read_flag(flag)):
+            return True
+        time.sleep(0.1)
+    flag.unlink(missing_ok=True)
+    return False
+
+
+def cmd_pause(cfg: Config, args: argparse.Namespace) -> int:
+    """The menu's Pause, from a terminal: finish the current match, take no more.
+
+    Also tells the site at once, as the menu does, rather than leaving it to
+    the helper's next look -- which can be a held poll or a whole match away.
+    """
+    from .daemon import PAUSE, PAUSED, sign_off
+
+    if not _ask_running_helper(PAUSE, lambda said: said == PAUSED):
+        _say("GammonView Helper is not running, so there is nothing to pause.")
+        return 1
+    token = load_token(cfg)
+    if token:
+        client = WorkerClient(cfg, token)
+        try:
+            sign_off(client)
+        finally:
+            client.close()
+    _say("GammonView Helper is paused. A match it is analysing now will finish;")
+    _say("it will not take any more until you run `gammonview-helper resume`.")
+    return 0
+
+
+def cmd_resume(cfg: Config, args: argparse.Namespace) -> int:
+    """Undo `pause` -- or Pause from the menu: the two are one state."""
+    from .daemon import RESUME
+
+    if not _ask_running_helper(RESUME, lambda said: said is None):
+        _say("GammonView Helper is not running. Start it with `gammonview-helper start`.")
+        return 1
+    _say("GammonView Helper is taking matches again.")
+    return 0
 
 
 def _parallelism(cfg: Config) -> str:
@@ -744,6 +809,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="emit one JSON object instead of a report (what the installer reads)",
     )
     status.set_defaults(func=cmd_status)
+
+    pause = sub.add_parser(
+        "pause", help="stop taking matches after the current one, until `resume`"
+    )
+    pause.set_defaults(func=cmd_pause)
+
+    resume = sub.add_parser("resume", help="take matches again after `pause`")
+    resume.set_defaults(func=cmd_resume)
 
     unlink = sub.add_parser("unlink", help="unlink this computer from its account")
     unlink.add_argument(
