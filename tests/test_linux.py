@@ -126,6 +126,15 @@ def test_dialogs_prefer_zenity_then_kdialog():
     assert linuxapp.dialog_argv("info", "T", "M", which=lambda n: None) is None
 
 
+def test_a_question_can_name_its_buttons():
+    zenity = linuxapp.dialog_argv("question", "T", "M", which=lambda n: n == "zenity",
+                                  yes="Open in Browser", no="Close")
+    assert zenity[-4:] == ["--ok-label", "Open in Browser", "--cancel-label", "Close"]
+    kde = linuxapp.dialog_argv("question", "T", "M", which=lambda n: n == "kdialog",
+                               yes="Open in Browser", no="Close")
+    assert kde[-4:] == ["--yes-label", "Open in Browser", "--no-label", "Close"]
+
+
 # --- the status icon -------------------------------------------------------
 
 
@@ -198,3 +207,13 @@ def test_the_icon_is_argb_in_network_order(tmp_path):
     assert linuxtray.pixmap(str(path)) == [[1, 1, bytes([40, 10, 20, 30])]]
     for paused in (False, True):
         assert Path(linuxtray.icon_path(paused)).is_file()
+
+
+@pytest.mark.parametrize("answer, opened", [(True, ["https://x.test/#/link-helper?code=c"]), (False, [])])
+def test_link_offers_the_browser_rather_than_opening_it(monkeypatch, answer, opened):
+    asked, went = [], []
+    monkeypatch.setattr(linuxapp, "ask", lambda title, message, yes, no: asked.append(yes) or answer)
+    monkeypatch.setattr(linuxtray.webbrowser, "open", went.append)
+    linuxtray.Narrator.ask_to_open("HERON", "https://x.test/#/link-helper?code=c")
+    assert asked == ["Open in Browser"]
+    assert went == opened

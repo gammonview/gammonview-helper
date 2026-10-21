@@ -66,13 +66,18 @@ class Narrator:
     """`cli.pair`'s narrator, in dialogs."""
 
     def offer(self, machine: str, platform: str, word: str, url: str, expires_in: int) -> None:
-        later(winapp.tell, (
+        later(self.ask_to_open, word, url)
+
+    @staticmethod
+    def ask_to_open(word: str, url: str) -> None:
+        """OK opens it here; the box's text, link and all, copies with Ctrl+C."""
+        from .cli import offer_text
+
+        if winapp.ask(
             "Link this computer",
-            "Your browser is opening GammonView. Sign in if you are asked, "
-            f"then choose this word:\n\n{word}\n\n"
-            "If the word is not one of the three you are shown, close the "
-            f"page: something is wrong.\n\nIf no browser opened, go to:\n{url}",
-        ))
+            offer_text(word, url) + "\n\nClick OK to open the page in this computer's browser.",
+        ):
+            webbrowser.open(url)
 
     def linked(self, store_name: str, worker_id: str | None) -> None:
         later(winapp.tell, (

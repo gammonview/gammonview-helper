@@ -55,9 +55,15 @@ uv tool install git+https://github.com/ngvlamis/gammonview-helper@v0.1.1
 gammonview-helper link
 ```
 
-It prints a word and opens your browser. Sign in if you are asked, and pick the
-word it printed out of the three you are shown. You will get an email saying
-the computer was linked.
+It prints a word and a link. Open the link in any browser — on this computer,
+or on your phone or another computer if this one is across the room or at the
+end of an SSH connection. Sign in if you are asked, and pick the word it printed
+out of the three you are shown. You will get an email saying the computer was
+linked.
+
+At a terminal on the computer itself, you can press Enter to open the link in
+its default browser. Over SSH, or on Linux with no display, it does not offer
+to; `--no-browser` turns the offer off anywhere.
 
 If the three words do not include the one on your screen, **something is
 wrong** — close the page and start again. That is the check working.
@@ -89,8 +95,9 @@ these controls:
   the helper takes no more until you resume. The website stops offering this
   computer at once, and sends your analyses to the shared server instead.
 - **Open GammonView.**
-- **Link This Computer…** — while it is not linked. Opens the browser and
-  shows the word to pick in a dialog, exactly as `link` does in a terminal.
+- **Link This Computer…** — while it is not linked. Shows the word to pick
+  and the link in a dialog, with a button to open the link in your browser,
+  as `link` does in a terminal.
   Once linked, the same place offers **Unlink This Computer…**, which asks
   first and does what `unlink` does. Not while a match is being analysed.
 - **Update to …** — only when gammonview.com offers a newer helper. Installed

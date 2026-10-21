@@ -236,15 +236,29 @@ def start(
 
 
 def dialog_argv(
-    kind: str, title: str, message: str, which: Callable[[str], str | None] = shutil.which
+    kind: str, title: str, message: str, which: Callable[[str], str | None] = shutil.which,
+    yes: str | None = None, no: str | None = None,
 ) -> list[str] | None:
-    """The command that shows `message`; `kind` is info, warning or question."""
+    """The command that shows `message`; `kind` is info, warning or question.
+
+    `yes` and `no` relabel a question's buttons, which both tools can do.
+    """
     if which("zenity"):
-        return ["zenity", f"--{kind}", "--title", title, "--text", f"{title}\n\n{message}",
+        argv = ["zenity", f"--{kind}", "--title", title, "--text", f"{title}\n\n{message}",
                 "--no-markup", "--width", "420"]
+        if yes:
+            argv += ["--ok-label", yes]
+        if no:
+            argv += ["--cancel-label", no]
+        return argv
     if which("kdialog"):
         flag = {"info": "--msgbox", "warning": "--sorry", "question": "--yesno"}[kind]
-        return ["kdialog", "--title", title, flag, message]
+        argv = ["kdialog", "--title", title, flag, message]
+        if yes:
+            argv += ["--yes-label", yes]
+        if no:
+            argv += ["--no-label", no]
+        return argv
     return None
 
 
@@ -256,9 +270,9 @@ def tell(message: tuple[str, str], warning: bool = False) -> None:
     subprocess.run(argv, capture_output=True)
 
 
-def ask(title: str, message: str) -> bool:
+def ask(title: str, message: str, yes: str | None = None, no: str | None = None) -> bool:
     """Yes or No. With nothing to ask with, the menu choice is the answer."""
-    argv = dialog_argv("question", title, message)
+    argv = dialog_argv("question", title, message, yes=yes, no=no)
     if argv is None:
         return True
     return subprocess.run(argv, capture_output=True).returncode == 0

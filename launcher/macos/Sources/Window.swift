@@ -25,6 +25,7 @@ final class InstallerWindow: NSWindow {
     private let wordCard = NSBox()
     private let wordLabel = NSTextField(labelWithString: "")
     private let wordCaption = NSTextField(wrappingLabelWithString: "")
+    private let linkLabel = NSTextField(labelWithString: "")
     private let primary = NSButton(title: "", target: nil, action: nil)
     private let alternate = NSButton(title: "", target: nil, action: nil)
     private let secondary = NSButton(title: "Quit", target: nil, action: nil)
@@ -38,7 +39,7 @@ final class InstallerWindow: NSWindow {
 
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false)
@@ -86,6 +87,16 @@ final class InstallerWindow: NSWindow {
         wordCaption.alignment = .center
         wordCaption.isHidden = true
 
+        // The page, written out, for a browser other than the default one or a
+        // device other than this one. Selectable so it can be copied by hand
+        // as well as with Copy Link.
+        linkLabel.font = .systemFont(ofSize: 12)
+        linkLabel.textColor = .secondaryLabelColor
+        linkLabel.alignment = .center
+        linkLabel.isSelectable = true
+        linkLabel.lineBreakMode = .byTruncatingMiddle
+        linkLabel.isHidden = true
+
         primary.bezelStyle = .rounded
         primary.keyEquivalent = "\r"
         primary.target = self
@@ -109,7 +120,7 @@ final class InstallerWindow: NSWindow {
 
         let stack = NSStackView(views: [
             headline, stepTitle, detail, progress, noticeLabel,
-            wordCard, wordCaption, NSView(), buttons,
+            wordCard, wordCaption, linkLabel, NSView(), buttons,
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -133,6 +144,7 @@ final class InstallerWindow: NSWindow {
             wordCard.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -56),
             wordCard.heightAnchor.constraint(equalToConstant: 74),
             wordCaption.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -56),
+            linkLabel.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -56),
             buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -56),
             wordLabel.centerXAnchor.constraint(equalTo: wordCard.centerXAnchor),
             wordLabel.centerYAnchor.constraint(equalTo: wordCard.centerYAnchor),
@@ -153,17 +165,25 @@ final class InstallerWindow: NSWindow {
             noticeLabel.isHidden = false
 
         case .word(let word, let url):
+            // Offered, not opened: the default browser is not always the one
+            // somebody signs in with, and the page works from any device.
             stepTitle.stringValue = "Link this computer to your account"
             detail.stringValue =
-                "Your browser is opening gammonview.com. Sign in if it asks, "
-                + "then choose this word:"
+                "Open the page below in a browser, on this computer or any other "
+                + "device. Sign in if it asks, then choose this word:"
             wordLabel.stringValue = word
             wordCard.isHidden = false
             wordCaption.stringValue =
                 "Three words will be offered. Only this one is right."
             wordCaption.isHidden = false
-            setPrimary("Open the page again") { NSWorkspace.shared.open(url) }
-            NSWorkspace.shared.open(url)
+            linkLabel.stringValue = url.absoluteString
+            linkLabel.isHidden = false
+            setPrimary("Open in Browser") { NSWorkspace.shared.open(url) }
+            setAlternate("Copy Link") { [weak self] in
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                self?.alternate.title = "Copied"
+            }
 
         case .choice(let message):
             progress.stopAnimation(nil)
@@ -186,8 +206,7 @@ final class InstallerWindow: NSWindow {
             progress.isHidden = true
             stepTitle.stringValue = title
             detail.stringValue = message
-            wordCard.isHidden = true
-            wordCaption.isHidden = true
+            hideLink()
             secondary.title = "Close"
             setPrimary("Done") { NSApp.terminate(nil) }
 
@@ -196,8 +215,7 @@ final class InstallerWindow: NSWindow {
             progress.isHidden = true
             stepTitle.stringValue = "Something went wrong"
             detail.stringValue = message
-            wordCard.isHidden = true
-            wordCaption.isHidden = true
+            hideLink()
             if downloadPage {
                 setPrimary("Open gammonview.com") {
                     NSWorkspace.shared.open(URL(string: "https://gammonview.com")!)
@@ -208,6 +226,14 @@ final class InstallerWindow: NSWindow {
                 primary.isHidden = true
             }
         }
+    }
+
+    /// Off the screen once linking has ended, Copy Link with it.
+    private func hideLink() {
+        wordCard.isHidden = true
+        wordCaption.isHidden = true
+        linkLabel.isHidden = true
+        alternate.isHidden = true
     }
 
     private func setPrimary(_ title: String, _ action: @escaping () -> Void) {

@@ -161,3 +161,13 @@ def test_the_menu_builds_in_every_state(monkeypatch):
 @windows
 def test_whoami_answers_with_a_sid():
     assert (winapp.current_sid() or "").startswith("S-1-5-")
+
+
+@pytest.mark.parametrize("answer, opened", [(True, ["https://x.test/#/link-helper?code=c"]), (False, [])])
+def test_link_offers_the_browser_rather_than_opening_it(monkeypatch, answer, opened):
+    asked, went = [], []
+    monkeypatch.setattr(winapp, "ask", lambda title, message: asked.append(message) or answer)
+    monkeypatch.setattr(wintray.webbrowser, "open", went.append)
+    wintray.Narrator.ask_to_open("HERON", "https://x.test/#/link-helper?code=c")
+    assert "HERON" in asked[0] and "https://x.test/#/link-helper?code=c" in asked[0]
+    assert went == opened

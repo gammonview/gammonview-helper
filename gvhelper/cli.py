@@ -31,6 +31,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 import webbrowser
 
@@ -62,18 +63,109 @@ def _banner(word: str) -> None:
     _say()
 
 
+def _minutes(seconds: int) -> str:
+    """`300` as "about 5 minutes": a count of seconds that large is not read."""
+    if seconds < 120:
+        return f"about {seconds} seconds"
+    return f"about {round(seconds / 60)} minutes"
+
+
+def browser_here() -> bool:
+    """Whether offering this computer's browser is a question worth asking.
+
+    Not over SSH, where "this computer" is the one at the far end and its
+    browser -- if it has one -- is on nobody's screen. Not on a Linux box with
+    no display, which is the same thing without the SSH. And not without a
+    terminal to answer in, since a prompt nobody can answer is a line of noise.
+    """
+    if sys.stdin is None or not sys.stdin.isatty() or not sys.stdout.isatty():
+        return False
+    if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
+        return False
+    if sys.platform.startswith("linux"):
+        return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    return True
+
+
+def open_in_browser(url: str) -> bool:
+    try:
+        return bool(webbrowser.open(url))
+    except Exception:  # pragma: no cover - a machine with no browser
+        return False
+
+
+def _enter_pressed(stop: threading.Event) -> bool:
+    """Wait for Enter, giving up when `stop` is set. True if it was pressed.
+
+    Looks rather than blocks, because the pairing finishing has to be able to
+    end the wait: a thread parked in `input()` outlives the question it was
+    asking, and holds the lock on stdin that interpreter shutdown wants. So
+    the descriptor is read directly, and only once `select` says a line is
+    there to read.
+    """
+    if sys.platform == "win32":
+        import msvcrt
+
+        while not stop.wait(0.1):
+            while msvcrt.kbhit():
+                if msvcrt.getwch() in "\r\n":
+                    return True
+        return False
+
+    import select
+
+    fd = sys.stdin.fileno()
+    while not stop.is_set():
+        ready, _, _ = select.select([fd], [], [], 0.1)
+        if ready:
+            return bool(os.read(fd, 1024))  # empty is end of input: stop asking
+    return False
+
+
 class _HumanLink:
-    """`link`, narrated for somebody who has been talked into opening a terminal."""
+    """`link`, narrated for somebody who has been talked into opening a terminal.
+
+    It shows the page rather than opening it. The default browser is not
+    always the one somebody signs in with, and the computer being linked is not
+    always the one they are sitting at -- it can be a box across the room, or
+    one at the end of an SSH connection. The page works from any device, so
+    the link is the instruction, and this computer's browser is an offer:
+    Enter takes it, while the pairing is polled in the meantime.
+    """
+
+    def __init__(self, ask: bool = False):
+        self._ask = ask
+        self._stop = threading.Event()
+        self._watcher: threading.Thread | None = None
 
     def offer(self, machine: str, platform: str, word: str, url: str, expires_in: int) -> None:
         _say(f"Linking this computer ({machine}, {platform}) to GammonView.")
-        _say("Your browser should open. Sign in if you are asked, then choose this word:")
-        _banner(word)
-        _say(f"You have about {expires_in} seconds. The page is at:")
+        _say("Open this page in a browser, on this computer or any other device:")
         _say(f"  {url}")
         _say()
+        _say("Sign in if you are asked, then choose this word:")
+        _banner(word)
+        _say(f"You have {_minutes(expires_in)}.")
+        if self._ask:
+            _say("Press Enter to open the page in this computer's browser.")
+            self._watcher = threading.Thread(
+                target=self._watch, args=(url,), name="helper-enter", daemon=True
+            )
+            self._watcher.start()
+        _say()
+
+    def _watch(self, url: str) -> None:
+        while _enter_pressed(self._stop):
+            if not open_in_browser(url):
+                _say("No browser opened here. Open the page above on any device instead.")
+
+    def _done(self) -> None:
+        self._stop.set()
+        if self._watcher is not None:
+            self._watcher.join(timeout=1)
 
     def linked(self, store_name: str, worker_id: str | None) -> None:
+        self._done()
         _say("This computer is linked.")
         _say(f"Credentials stored in: {store_name}")
         _say()
@@ -87,6 +179,7 @@ class _HumanLink:
         _say("  gammonview-helper run")
 
     def failed(self, reason: str, retry: bool) -> None:
+        self._done()
         _say(reason)
         if retry:
             _say("Run `gammonview-helper link` to try again.")
@@ -152,17 +245,39 @@ def cmd_link(cfg: Config, args: argparse.Namespace) -> int:
     difference `--porcelain` makes -- there is no second code path through the
     flow itself, so the installer and the terminal cannot disagree about what
     happened.
+
+    `--no-browser` predates the offer, when the browser was opened without
+    asking; it now only takes the offer away. It stays, because the installers
+    already on people's computers pass it.
     """
-    out = _PorcelainLink() if args.porcelain else _HumanLink()
-    return pair(cfg, out, args.name or machine_name(), open_browser=not args.no_browser)
+    if args.porcelain:
+        out = _PorcelainLink()
+    else:
+        out = _HumanLink(ask=not args.no_browser and browser_here())
+    return pair(cfg, out, args.name or machine_name())
 
 
-def pair(cfg: Config, out, machine: str, *, open_browser: bool = True) -> int:
+def offer_text(word: str, url: str) -> str:
+    """What the menus' Link dialog says, on all three. The question is theirs."""
+    return (
+        "Open this page in a browser, on this computer or any other device:\n\n"
+        f"{url}\n\n"
+        "Sign in if you are asked, then choose this word:\n\n"
+        f"{word}\n\n"
+        "If the word is not one of the three you are shown, close the page: "
+        "something is wrong."
+    )
+
+
+def pair(cfg: Config, out, machine: str) -> int:
     """The flow itself, narrated through `out` (`offer`, `linked`, `failed`).
 
     Separate from `cmd_link` because the menu-bar item links too, and must run
     this very flow rather than a copy: pairing is the part of the helper most
     likely to change, and two copies of it is one that falls behind.
+
+    It never opens a browser. Whether to, and which, is the narrator's
+    question to put to the person, in whatever it is talking to them through.
     """
     pairing = PairingClient(cfg)
     platform = platform_name()
@@ -179,12 +294,6 @@ def pair(cfg: Config, out, machine: str, *, open_browser: bool = True) -> int:
     url = cfg.link_url(offer["code"])
     expires_in = int(offer.get("expires_in") or 60)
     out.offer(machine, platform, offer["word"], url, expires_in)
-
-    if open_browser:
-        try:
-            webbrowser.open(url)
-        except Exception:  # pragma: no cover - a machine with no browser
-            pass
 
     # Poll until it is confirmed or the offer expires. The relay holds each poll
     # open for up to 30s, so a 60s window is two round trips and there is no
@@ -780,7 +889,7 @@ def build_parser() -> argparse.ArgumentParser:
     link.add_argument(
         "--no-browser",
         action="store_true",
-        help="print the link instead of opening it (for a machine with no browser)",
+        help="show the link without offering to open it here (for a machine with no browser)",
     )
     link.add_argument(
         "--porcelain",

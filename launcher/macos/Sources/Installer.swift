@@ -418,10 +418,11 @@ enum Installer {
 
     /// Hand the device flow to the package and render what it says.
     ///
-    /// `--no-browser` and then opening the URL ourselves, so the word is on
-    /// screen before Safari takes the focus: a browser that arrives first is a
-    /// browser the user reads first, and the one thing they must do is compare
-    /// three words there against the one word here.
+    /// `--no-browser`, and the window offers the URL itself, beside the word: a
+    /// browser that arrives first is a browser the user reads first, and the
+    /// one thing they must do is compare three words there against the one
+    /// word here. Offers rather than opens, because the default browser is not
+    /// always the one they sign in with.
     private static func pair(
         _ manifest: Manifest, emit: @escaping (InstallerEvent) -> Void
     ) throws {

@@ -37,7 +37,7 @@ could collect the token it was about to mint. `PairingClient` keeps them apart
 by construction and `tests/test_client.py` asserts the secret is never put in a
 URL.
 
-A pairing lives **60 seconds** (`PAIR_TTL_SECONDS`). The browser is shown three
+A pairing lives **five minutes** (`PAIR_TTL_SECONDS`). The browser is shown three
 words and must pick the one the helper printed; a wrong pick fails the pairing
 rather than offering another go.
 

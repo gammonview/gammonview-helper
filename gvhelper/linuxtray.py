@@ -138,13 +138,15 @@ class Narrator:
     """`cli.pair`'s narrator, in dialogs."""
 
     def offer(self, machine: str, platform: str, word: str, url: str, expires_in: int) -> None:
-        later(linuxapp.tell, (
-            "Link this computer",
-            "Your browser is opening GammonView. Sign in if you are asked, "
-            f"then choose this word:\n\n{word}\n\n"
-            "If the word is not one of the three you are shown, close the "
-            f"page: something is wrong.\n\nIf no browser opened, go to:\n{url}",
-        ))
+        later(self.ask_to_open, word, url)
+
+    @staticmethod
+    def ask_to_open(word: str, url: str) -> None:
+        from .cli import offer_text
+
+        if linuxapp.ask("Link this computer", offer_text(word, url),
+                        yes="Open in Browser", no="Close"):
+            webbrowser.open(url)
 
     def linked(self, store_name: str, worker_id: str | None) -> None:
         later(linuxapp.tell, (

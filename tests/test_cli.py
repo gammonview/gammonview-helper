@@ -11,7 +11,10 @@ code they cannot see is worth nothing next to a sentence telling them what to do
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
+import threading
 
 import httpx
 
@@ -77,35 +80,120 @@ def test_the_word_is_shown_where_it_cannot_be_skimmed_past(capsys):
     assert "─" in lines[boxed[0] + 1]
 
 
-@respx.mock
-def test_the_browser_is_sent_to_the_confirmation_route():
+def _pairs_at_once():
     respx.post(f"{RELAY}/pair/start").mock(
         return_value=httpx.Response(200, json={
-            "code": "c1", "secret": "s1", "word": "W", "choices": [], "expires_in": 60,
+            "code": "c1", "secret": "s1", "word": "W", "choices": [], "expires_in": 300,
         })
     )
     respx.post(f"{RELAY}/pair/poll").mock(
         return_value=httpx.Response(200, json={"status": "linked", "token": "t", "worker_id": "w"})
     )
-    _run(["link"])
+
+
+def _presses_enter(monkeypatch, times):
+    """Enter, `times` times, and then nothing more until the pairing ends."""
+    presses = iter(range(times))
+
+    def pressed(stop):
+        if next(presses, None) is not None:
+            return True
+        stop.wait()
+        return False
+
+    monkeypatch.setattr(cli, "browser_here", lambda: True)
+    monkeypatch.setattr(cli, "_enter_pressed", pressed)
+
+
+@respx.mock
+def test_the_browser_is_offered_not_opened(capsys, monkeypatch):
+    """The default browser is not always the one somebody signs in with, so
+    nothing opens until they say so."""
+    _pairs_at_once()
+    _presses_enter(monkeypatch, 0)
+    assert _run(["link"]) == 0
+    out = capsys.readouterr().out
+    assert cli._opened == []
+    assert "Press Enter to open the page in this computer's browser." in out
+    assert "https://example.test/#/link-helper?code=c1" in out
+    assert "about 5 minutes" in out
+
+
+@respx.mock
+def test_enter_sends_the_browser_to_the_confirmation_route(monkeypatch):
+    _pairs_at_once()
+    _presses_enter(monkeypatch, 1)
+    assert _run(["link"]) == 0
     assert cli._opened == ["https://example.test/#/link-helper?code=c1"]
 
 
 @respx.mock
-def test_no_browser_still_prints_the_link(capsys):
+def test_no_browser_still_prints_the_link_and_offers_nothing(capsys, monkeypatch):
     """For a machine with no browser -- a NAS, a headless box, a remote shell --
     which is a real way people would run this."""
-    respx.post(f"{RELAY}/pair/start").mock(
-        return_value=httpx.Response(200, json={
-            "code": "c1", "secret": "s1", "word": "W", "choices": [], "expires_in": 60,
-        })
-    )
-    respx.post(f"{RELAY}/pair/poll").mock(
-        return_value=httpx.Response(200, json={"status": "linked", "token": "t", "worker_id": "w"})
-    )
+    _pairs_at_once()
+    _presses_enter(monkeypatch, 1)
     _run(["link", "--no-browser"])
     assert cli._opened == []
-    assert "https://example.test/#/link-helper?code=c1" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "https://example.test/#/link-helper?code=c1" in out
+    assert "Press Enter" not in out
+
+
+@respx.mock
+def test_nothing_is_offered_where_this_computer_has_no_browser_to_offer(capsys, monkeypatch):
+    _pairs_at_once()
+    monkeypatch.setattr(cli, "browser_here", lambda: False)
+    _run(["link"])
+    out = capsys.readouterr().out
+    assert "https://example.test/#/link-helper?code=c1" in out
+    assert "Press Enter" not in out
+
+
+class _Terminal:
+    def isatty(self):
+        return True
+
+
+def test_a_browser_is_offered_only_at_a_terminal_on_this_computer(monkeypatch):
+    monkeypatch.setattr(cli.sys, "stdin", _Terminal())
+    monkeypatch.setattr(cli.sys, "stdout", _Terminal())
+    monkeypatch.setattr(cli.sys, "platform", "darwin")
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+    monkeypatch.delenv("SSH_TTY", raising=False)
+    assert cli.browser_here()
+
+    monkeypatch.setenv("SSH_CONNECTION", "10.0.0.1 1 10.0.0.2 22")
+    assert not cli.browser_here()
+    monkeypatch.delenv("SSH_CONNECTION")
+
+    # Linux with no display is a remote shell without the SSH.
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    assert not cli.browser_here()
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    assert cli.browser_here()
+
+    # Piped, there is nobody to answer.
+    monkeypatch.setattr(cli.sys, "stdin", None)
+    assert not cli.browser_here()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the POSIX half reads a descriptor")
+def test_waiting_for_enter_ends_on_enter_on_stop_and_at_the_end_of_input(monkeypatch):
+    read, write = os.pipe()
+    with os.fdopen(read) as stdin:
+        monkeypatch.setattr(cli.sys, "stdin", stdin)
+        os.write(write, b"\n")
+        assert cli._enter_pressed(threading.Event())
+
+        stop = threading.Event()
+        stop.set()
+        assert not cli._enter_pressed(stop)
+
+        os.close(write)
+        assert not cli._enter_pressed(threading.Event())
 
 
 @respx.mock
@@ -275,9 +363,9 @@ def test_porcelain_nobody_confirms_ends_in_one_event(capsys, monkeypatch):
 
 @respx.mock
 def test_porcelain_leaves_the_browser_to_the_installer(capsys):
-    """The launcher passes `--no-browser` and opens the URL after its own window
-    is showing the word -- a browser that steals focus first is a browser the
-    user reads before they have read the word they are supposed to match."""
+    """The launcher passes `--no-browser` and offers the URL in its own window,
+    beside the word -- a browser that steals focus first is a browser the user
+    reads before they have read the word they are supposed to match."""
     respx.post(f"{RELAY}/pair/start").mock(
         return_value=httpx.Response(200, json={
             "code": "c1", "secret": "s1", "word": "W", "choices": [], "expires_in": 60,

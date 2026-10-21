@@ -28,6 +28,7 @@ namespace GammonView.Installer
         private readonly Panel wordCard = new Panel();
         private readonly TextBox wordLabel = new TextBox();
         private readonly Label wordCaption = new Label();
+        private readonly TextBox linkLabel = new TextBox();
         private readonly Button primary = new Button();
         private readonly Button alternate = new Button();
         private readonly Button secondary = new Button();
@@ -130,6 +131,19 @@ namespace GammonView.Installer
             wordCaption.SetBounds(inset, 296, width, 24);
             wordCaption.Visible = false;
 
+            // The page, written out, for a browser other than the default one or
+            // a device other than this one. A read-only text box for the same
+            // reason as the word: it can be selected and copied by hand.
+            linkLabel.ReadOnly = true;
+            linkLabel.BorderStyle = BorderStyle.None;
+            linkLabel.BackColor = SystemColors.Window;
+            linkLabel.ForeColor = SystemColors.GrayText;
+            linkLabel.TextAlign = HorizontalAlignment.Center;
+            linkLabel.Font = BodyFont();
+            linkLabel.TabStop = false;
+            linkLabel.SetBounds(inset, 326, width, 22);
+            linkLabel.Visible = false;
+
             // Windows order: the default action, then Close, at the right. The
             // destructive alternate sits alone at the left and is never the
             // AcceptButton -- Enter must not uninstall.
@@ -155,7 +169,7 @@ namespace GammonView.Installer
             Controls.AddRange(new Control[]
             {
                 headline, stepTitle, detail, progress, notice, wordCard, wordCaption,
-                primary, secondary, alternate,
+                linkLabel, primary, secondary, alternate,
             });
             CancelButton = secondary;
         }
@@ -179,16 +193,20 @@ namespace GammonView.Installer
                     break;
 
                 case InstallerEvent.Word word:
+                    // Offered, not opened: the default browser is not always the
+                    // one somebody signs in with, and the page works from any device.
                     stepTitle.Text = "Link this computer to your account";
-                    detail.Text = "Your browser is opening gammonview.com. Sign in if it asks, "
-                        + "then choose this word:";
+                    detail.Text = "Open the page below in a browser, on this computer or any "
+                        + "other device. Sign in if it asks, then choose this word:";
                     notice.Visible = false;
                     wordLabel.Text = word.Text;
                     wordCard.Visible = true;
                     wordCaption.Text = "Three words will be offered. Only this one is right.";
                     wordCaption.Visible = true;
-                    SetPrimary("Open the page again", () => Open(word.Url));
-                    Open(word.Url);
+                    linkLabel.Text = word.Url;
+                    linkLabel.Visible = true;
+                    SetPrimary("Open in browser", () => Open(word.Url));
+                    SetAlternate("Copy link", () => CopyLink(word.Url));
                     break;
 
                 case InstallerEvent.Choice choice:
@@ -205,9 +223,7 @@ namespace GammonView.Installer
                     StopProgress();
                     stepTitle.Text = finished.Title;
                     detail.Text = finished.Message;
-                    wordCard.Visible = false;
-                    wordCaption.Visible = false;
-                    alternate.Visible = false;
+                    HideLink();
                     secondary.Text = "Close";
                     SetPrimary("Done", Close);
                     break;
@@ -216,8 +232,7 @@ namespace GammonView.Installer
                     StopProgress();
                     stepTitle.Text = "Something went wrong";
                     detail.Text = failed.Message;
-                    wordCard.Visible = false;
-                    wordCaption.Visible = false;
+                    HideLink();
                     if (failed.DownloadPage)
                         SetPrimary("Open gammonview.com", () => Open("https://gammonview.com"));
                     else if (failed.Retry)
@@ -226,6 +241,21 @@ namespace GammonView.Installer
                         primary.Visible = false;
                     break;
             }
+        }
+
+        /// <summary>Off the screen once linking has ended, Copy link with it.</summary>
+        private void HideLink()
+        {
+            wordCard.Visible = false;
+            wordCaption.Visible = false;
+            linkLabel.Visible = false;
+            alternate.Visible = false;
+        }
+
+        private void CopyLink(string url)
+        {
+            try { Clipboard.SetText(url); alternate.Text = "Copied"; }
+            catch { /* the clipboard is busy; the link is on screen to copy by hand */ }
         }
 
         private static void Open(string url)

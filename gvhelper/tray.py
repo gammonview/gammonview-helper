@@ -346,17 +346,25 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
             if kind == "offer":
                 _, word, url = event
                 bring_forward()
-                rumps.alert(
+                # Asked, not done: the default browser is not always the one
+                # somebody signs in with. Copy Link is for the other one.
+                from .cli import offer_text
+
+                answer = rumps.alert(
                     title="Link this computer",
-                    message=(
-                        "Your browser is opening GammonView. Sign in if you are "
-                        "asked, then choose this word:\n\n"
-                        f"{word}\n\n"
-                        "If the word is not one of the three you are shown, "
-                        "close the page: something is wrong.\n\n"
-                        f"If no browser opened, go to:\n{url}"
-                    ),
+                    message=offer_text(word, url),
+                    ok="Open in Browser",
+                    cancel="Close",
+                    other="Copy Link",
                 )
+                if answer == 1:
+                    webbrowser.open(url)
+                elif answer == -1:
+                    from AppKit import NSPasteboard, NSPasteboardTypeString
+
+                    board = NSPasteboard.generalPasteboard()
+                    board.clearContents()
+                    board.setString_forType_(url, NSPasteboardTypeString)
             elif kind == "linked":
                 # Nothing to restart: the loop is waiting on the credential
                 # store, and finds this within `LINK_POLL_INTERVAL`.
