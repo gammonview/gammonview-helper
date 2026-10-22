@@ -78,9 +78,11 @@ def test_pairing_start_returns_two_distinct_secrets_and_a_word(client, relay):
     # Three words, one of which the helper prints and the browser must pick.
     assert len(body["choices"]) == 3
     assert body["word"] in body["choices"]
-    # The screen has a minute to answer. `PairingClient.poll` is built around
-    # this number, so a change to it belongs in a contract revision.
-    assert body["expires_in"] == 60
+    # How long the screen has to answer. The helper waits as long as it is
+    # told (`cli.pair`), so only the shape is the contract: a whole number of
+    # seconds, long enough for somebody to sign in on the page first.
+    assert isinstance(body["expires_in"], int)
+    assert body["expires_in"] >= 60
 
 
 @requires_relay
