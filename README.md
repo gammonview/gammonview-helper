@@ -249,7 +249,9 @@ A few settings are this computer's, and are chosen on gammonview.com under
 - **Analyse while running on battery** — offered on a computer with a battery.
   With it off, an unplugged laptop takes no matches until it is plugged in.
 - **When** — any time, or only between two times on this computer's clock.
-- **Fetch and analyse OpenGammon matches on this computer**, and, beneath it,
+- **Fetch and analyse OpenGammon matches on this computer** — shown once
+  OpenGammon sync is set up — and, beneath it, when this computer does the
+  analysing,
   **wait until I'm away from this computer**: synced matches are analysed only
   once the keyboard and mouse have been left alone for five minutes, so the
   sync never slows the computer while you use it. Offered where the helper can
