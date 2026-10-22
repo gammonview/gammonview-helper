@@ -13,6 +13,7 @@ point of writing them this way rather than against a mock of our own design.
 from __future__ import annotations
 
 import base64
+import json
 import time
 
 import httpx
@@ -337,3 +338,49 @@ def test_an_http_error_still_carries_the_relay_s_own_words(cfg):
         PairingClient(cfg).start("Studio", "macOS")
     assert str(caught.value) == "Too many attempts. Wait a minute."
     assert caught.value.status == 429
+
+
+@respx.mock
+def test_hello_says_what_else_this_machine_can_do(cfg, monkeypatch):
+    """Without `features` the site would stop offering the account's own
+    presets, so it is sent on every hello, from what the engine can do."""
+    from gvhelper import runner
+
+    route = respx.post(f"{RELAY}/worker/hello").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    monkeypatch.setattr(runner, "engine_features", lambda: ["custom_presets"])
+    WorkerClient(cfg, "tok").hello("Mac", "1.0.0", "bgsage", ["fast"])
+    assert json.loads(route.calls.last.request.read())["features"] == ["custom_presets"]
+
+    monkeypatch.setattr(runner, "engine_features", lambda: [])
+    WorkerClient(cfg, "tok").register("Mac", "1.0.0", "bgsage", ["fast"])
+    assert json.loads(route.calls.last.request.read())["features"] == []
+
+
+@respx.mock
+def test_a_custom_job_arrives_with_its_definition(cfg):
+    respx.get(f"{RELAY}/worker/next-job").mock(
+        return_value=httpx.Response(
+            200,
+            json={"job": {"id": "j1", "preset": "custom/my-deep", "preset_name": "my-deep",
+                          "preset_spec": {"first_pass": "3ply"},
+                          "match": base64.b64encode(b"OGXM").decode(), "lease_seconds": 300}},
+        )
+    )
+    job = WorkerClient(cfg, "tok").next_job()
+    assert (job.preset, job.preset_name, job.preset_spec) == (
+        "custom/my-deep", "my-deep", {"first_pass": "3ply"})
+
+
+@respx.mock
+def test_a_named_job_has_no_definition(cfg):
+    respx.get(f"{RELAY}/worker/next-job").mock(
+        return_value=httpx.Response(
+            200,
+            json={"job": {"id": "j1", "preset": "fast",
+                          "match": base64.b64encode(b"OGXM").decode(), "lease_seconds": 300}},
+        )
+    )
+    job = WorkerClient(cfg, "tok").next_job()
+    assert job.preset_name is None and job.preset_spec is None

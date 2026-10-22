@@ -111,3 +111,92 @@ def test_a_real_match_analyses_and_comes_back_gzipped():
 
     done, total = progress.get()
     assert total > 0 and done == total
+
+
+# --- custom presets ----------------------------------------------------------
+
+
+def _engine_takes_definitions() -> bool:
+    try:
+        from gvanalysis.presets import custom_preset  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+needs_custom = pytest.mark.skipif(
+    not _engine_takes_definitions(), reason="the installed engine predates custom_preset"
+)
+
+
+def test_custom_presets_are_offered_exactly_when_the_engine_can_run_them():
+    """A helper on an engine too old to take a definition must not say it can:
+    the relay would hand it jobs it can only fail."""
+    assert runner.engine_features() == (["custom_presets"] if _engine_takes_definitions() else [])
+
+
+#: Definitions the website's settings page accepts (`helpersettings.checked_spec`
+#: in the GammonView accounts service, which mirrors the engine's rules because
+#: that service may not import it) and ones it refuses. The same lists are in
+#: `accounts/tests/test_helper_settings.py`. They are the drift check between
+#: the two validators: if the engine starts refusing one the site accepts, a
+#: user can save a preset that fails every match it is given.
+SITE_ACCEPTS = [
+    {"first_pass": "2ply"},
+    {"first_pass": "3ply", "second_pass": "rollout", "error_threshold": 0},
+    {"first_pass": "3ply", "mid_pass": "4ply", "second_pass": "truncated2", "close_threshold": 0.08},
+    {"first_pass": {"checker": "3ply"}, "mid_pass": {"cube": "truncated2"},
+     "second_pass": "truncated2", "close_threshold": {"cube": 0.08},
+     "error_threshold": {"checker": 0.02, "cube": 0.0}},
+    {"first_pass": {"checker": "3ply", "cube": "4ply"}, "mid_pass": {"checker": "4ply"},
+     "second_pass": "truncated2", "close_threshold": {"checker": 0.08}, "error_threshold": 0.02},
+]
+SITE_REFUSES = [
+    {},
+    {"second_pass": "truncated2"},
+    {"first_pass": "5ply"},
+    {"first_pass": {"cube": "3ply"}},
+    {"first_pass": {"checker": "3ply", "move": "4ply"}},
+    {"first_pass": "3ply", "revision": 2},
+    {"first_pass": "3ply", "resign_errors": True},
+    {"first_pass": "3ply", "mid_pass": "4ply", "close_threshold": 0.08},
+    {"first_pass": "3ply", "mid_pass": "4ply", "second_pass": "truncated2"},
+    {"first_pass": "3ply", "mid_pass": {"cube": "4ply"}, "second_pass": "truncated2",
+     "close_threshold": {"checker": 0.08}},
+    {"first_pass": "3ply", "second_pass": "truncated2", "error_threshold": -0.1},
+    {"first_pass": "3ply", "second_pass": "truncated2", "error_threshold": True},
+]
+
+
+@needs_custom
+@pytest.mark.parametrize("spec", SITE_ACCEPTS)
+def test_what_the_site_accepts_the_engine_runs(spec):
+    assert runner.custom("mine", spec).label.startswith("custom/mine@")
+
+
+@needs_custom
+@pytest.mark.parametrize("spec", SITE_REFUSES)
+def test_what_the_site_refuses_the_engine_refuses(spec):
+    """The other direction matters less -- the site being stricter only costs a
+    preset nobody could save -- but a site looser than the engine is the bug,
+    so both are pinned."""
+    with pytest.raises(runner.PresetRefused):
+        runner.custom("mine", spec)
+
+
+@needs_custom
+@needs_engine
+@pytest.mark.slow
+def test_a_custom_preset_analyses_and_is_labelled_as_one():
+    """End to end: the definition the relay carries is what ran, and the
+    analysis says so -- `custom/<name>@<digest>`, which is what the viewer reads
+    to name it."""
+    from gvformat import read_gvab
+
+    spec = {"first_pass": "1ply", "second_pass": "2ply", "error_threshold": 0.0}
+    out = runner.analyze(GOLDEN.read_bytes(), "my-quick", runner.Progress(),
+                         jobs=1, threads=1, spec=spec)
+    doc = read_gvab(gzip.decompress(out))
+    labels = [info.get("preset") for info in doc["analyses_info"]]
+    assert runner.custom("my-quick", spec).label in labels

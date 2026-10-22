@@ -32,7 +32,9 @@ from pathlib import Path
 from . import USER_AGENT, __version__
 from .client import POLL_WAIT, Job, RelayError, Unauthorized, WorkerClient
 from .config import Config, machine_name
-from .runner import Progress, analyze, available_presets, engine_version, lower_priority
+from .runner import (
+    PresetRefused, Progress, analyze, available_presets, engine_version, lower_priority,
+)
 from .ogsync import LocalWork, Syncer
 from .store import load_token
 
@@ -250,9 +252,15 @@ def run_job(client: WorkerClient, job: Job, cfg: Config, control: Control | None
 
     def work() -> None:
         try:
-            result["bytes"] = analyze(
-                job.match_bytes, job.preset, progress, jobs=cfg.jobs, threads=cfg.threads
-            )
+            if job.preset_spec is not None:
+                result["bytes"] = analyze(
+                    job.match_bytes, job.preset_name or "", progress,
+                    jobs=cfg.jobs, threads=cfg.threads, spec=job.preset_spec,
+                )
+            else:
+                result["bytes"] = analyze(
+                    job.match_bytes, job.preset, progress, jobs=cfg.jobs, threads=cfg.threads
+                )
         except BaseException as e:  # noqa: BLE001 - reported, then re-raised to nobody
             result["error"] = e
 
@@ -291,7 +299,10 @@ def run_job(client: WorkerClient, job: Job, cfg: Config, control: Control | None
     if "error" in result:
         error = result["error"]
         _log(f"job {job.id} failed: {error}")
-        client.fail(job.id, f"{type(error).__name__}: {error}")
+        # A refused preset is the user's to fix and says so in a sentence;
+        # anything else keeps its type, which is the clue to a bug.
+        message = str(error) if isinstance(error, PresetRefused) else f"{type(error).__name__}: {error}"
+        client.fail(job.id, message)
         return
 
     payload = result.get("bytes")

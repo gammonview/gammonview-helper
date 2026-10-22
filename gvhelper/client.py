@@ -197,6 +197,10 @@ class Job:
     preset: str
     match_bytes: bytes
     lease_seconds: int
+    #: One of the account's own presets: the engine's name for it, and its
+    #: definition. Both None for a named preset.
+    preset_name: str | None = None
+    preset_spec: dict | None = None
 
 
 class PairingClient:
@@ -265,7 +269,8 @@ class WorkerClient:
     def _base(self) -> str:
         return f"{self.cfg.relay_base}/worker"
 
-    def hello(self, name: str, version: str, engine: str, presets: list[str]) -> str | None:
+    def hello(self, name: str, version: str, engine: str, presets: list[str],
+              features: list[str] | None = None) -> str | None:
         """Register this machine and what it can do, and return whose it is.
 
         The preset list is the useful half. The site gates its menu on what a
@@ -275,22 +280,33 @@ class WorkerClient:
         The answer is the account's email, for the menu to show -- pairing
         never says which account approved it. None from a site older than that.
         """
-        body = self.register(name, version, engine, presets)
+        body = self.register(name, version, engine, presets, features)
         account = body.get("account")
         return account if isinstance(account, str) and account else None
 
-    def register(self, name: str, version: str, engine: str, presets: list[str]) -> dict:
+    def register(self, name: str, version: str, engine: str, presets: list[str],
+                 features: list[str] | None = None) -> dict:
         """`hello`, returning the whole answer rather than just the account.
 
         The OpenGammon sync reads its setting from the same answer (`og_sync`),
         so a player who turns sync on is heard on the helper's next hello, with
         no route of its own to poll. An empty dict from a site that sent
         nothing readable.
+
+        `features` defaults to what the installed engine can do
+        (`runner.engine_features`), so no caller can forget to say it -- a
+        hello without it reads as a helper that cannot run custom presets, and
+        the site would stop offering them.
         """
+        if features is None:
+            from .runner import engine_features
+
+            features = engine_features()
         response = _check(
             _send(self._client, "POST",
                 f"{self._base}/hello",
-                json={"name": name, "version": version, "engine": engine, "presets": presets},
+                json={"name": name, "version": version, "engine": engine, "presets": presets,
+                      "features": features},
             ),
             "Could not register this computer.",
         )
@@ -414,9 +430,12 @@ class WorkerClient:
         job = r.json().get("job")
         if not job:
             return None
+        spec = job.get("preset_spec")
         return Job(
             id=job["id"],
             preset=job.get("preset") or "",
+            preset_name=job.get("preset_name") if isinstance(spec, dict) else None,
+            preset_spec=spec if isinstance(spec, dict) else None,
             # base64 rather than a second round trip: the handout is JSON
             # because it carries the preset too, and a 64 KB cap makes the 4/3
             # expansion cheap. The result goes back as raw bytes instead.

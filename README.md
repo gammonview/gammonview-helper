@@ -237,6 +237,16 @@ purpose; set either to a number if you want a hard cap, and it will be kept.
 `nice` is what makes the helper something you forget is running — it yields to
 whatever you are actually doing, and every engine worker inherits it.
 
+### Your own presets
+
+Analysis presets of your own are built on gammonview.com, under **My Computers →
+Helper settings**, not here. They belong to your account, so every computer
+linked to it can run them: a match sent with one carries the preset's definition
+to whichever computer takes it, and nothing is stored on this one. The analysis
+is labelled `custom/<name>@<digest>`, so it says exactly which definition made
+it. This needs an engine new enough to take a definition; `hello` tells the site
+whether this computer's engine can, and an older helper is never sent one.
+
 ## Licence
 
 MIT. The engine ([bgsage](https://pypi.org/project/bgsage/)) is MPL-2.0 and is

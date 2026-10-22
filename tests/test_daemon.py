@@ -356,3 +356,51 @@ def test_the_menus_pause_is_visible_to_the_terminal(tmp_path):
     assert daemon.read_flag(flag) == daemon.PAUSED
     control.resume()
     assert not flag.exists()
+
+
+def _custom_job(spec):
+    return {"job": {"id": "j1", "preset": "custom/my-deep", "preset_name": "my-deep",
+                    "preset_spec": spec,
+                    "match": base64.b64encode(b"OGXM").decode(), "lease_seconds": 300}}
+
+
+@respx.mock
+def test_a_custom_job_runs_its_own_definition(cfg, monkeypatch):
+    """The definition reaches the analysis with the engine's name for it -- not
+    the relay's `custom/` spelling, which is the site's, not the engine's."""
+    respx.post(f"{RELAY}/worker/hello").mock(return_value=httpx.Response(200, json={}))
+    respx.get(f"{RELAY}/worker/next-job").mock(
+        return_value=httpx.Response(200, json=_custom_job({"first_pass": "3ply"})))
+    respx.post(f"{RELAY}/worker/jobs/j1/progress").mock(return_value=httpx.Response(200, json={}))
+    respx.post(f"{RELAY}/worker/jobs/j1/result").mock(return_value=httpx.Response(200, json={}))
+    seen = {}
+
+    def fake_analyze(match_bytes, preset, progress, **kw):
+        seen.update(preset=preset, spec=kw.get("spec"))
+        return b"gz"
+
+    monkeypatch.setattr(daemon, "analyze", fake_analyze)
+    assert daemon.serve(cfg, "tok", once=True) == 0
+    assert seen == {"preset": "my-deep", "spec": {"first_pass": "3ply"}}
+
+
+@respx.mock
+def test_a_refused_definition_is_reported_in_the_engines_words(cfg, monkeypatch):
+    """What the browser shows the person who built the preset: a sentence, with
+    no exception type in front of it."""
+    from gvhelper.runner import PresetRefused
+
+    respx.post(f"{RELAY}/worker/hello").mock(return_value=httpx.Response(200, json={}))
+    respx.get(f"{RELAY}/worker/next-job").mock(
+        return_value=httpx.Response(200, json=_custom_job({"first_pass": "9ply"})))
+    respx.post(f"{RELAY}/worker/jobs/j1/progress").mock(return_value=httpx.Response(200, json={}))
+    failed = respx.post(f"{RELAY}/worker/jobs/j1/error").mock(
+        return_value=httpx.Response(200, json={}))
+
+    def refuse(*a, **kw):
+        raise PresetRefused("Your preset could not be run: first_pass '9ply' is not a valid level")
+
+    monkeypatch.setattr(daemon, "analyze", refuse)
+    assert daemon.serve(cfg, "tok", once=True) == 0
+    sent = failed.calls.last.request.read().decode()
+    assert "Your preset could not be run" in sent and "PresetRefused" not in sent

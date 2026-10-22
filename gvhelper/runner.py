@@ -119,6 +119,7 @@ def analyze(
     jobs: int = 0,
     threads: int = 0,
     suffix: str = ".gvab",
+    spec: dict | None = None,
 ) -> bytes:
     """Analyse OGXM binary and return the gzipped analysed `.gvab`.
 
@@ -134,7 +135,13 @@ def analyze(
     A synced OpenGammon match arrives as a JellyFish `.mat`, and is passed with
     `suffix=".mat"` so `gvanalysis` converts it the way the browser's
     `convertMat` would -- the two are byte-for-byte the same converter.
+
+    `spec` is a custom preset's definition, carried by the job; `preset` is
+    then its name, and the analysis is labelled `custom/<name>@<digest>`. Built
+    before the match is written anywhere, so a definition the engine refuses
+    costs nothing but the sentence saying why.
     """
+    chosen = custom(preset, spec) if spec is not None else (preset or None)
     fd, path = tempfile.mkstemp(suffix=suffix)
     try:
         with os.fdopen(fd, "wb") as f:
@@ -142,7 +149,7 @@ def analyze(
         return gzip.compress(
             mat_to_gvab(
                 path,
-                preset=preset or None,
+                preset=chosen,
                 on_progress=progress.set,
                 jobs=jobs,
                 threads=threads,
@@ -184,6 +191,45 @@ def engine_version() -> str:
         return f"bgsage {version('bgsage')}"
     except PackageNotFoundError:  # pragma: no cover - installed without [engine]
         return "unknown"
+
+
+#: The feature word for running a preset handed over as a definition. The relay
+#: gives a job naming one of the account's own presets only to a helper that
+#: says this in its `hello`.
+CUSTOM_PRESETS = "custom_presets"
+
+
+class PresetRefused(ValueError):
+    """The engine would not run a custom preset's definition.
+
+    Its own type so the job's error is the engine's sentence alone -- it is
+    what the browser shows, and "PresetConfigError:" in front of it is noise
+    to the person who built the preset.
+    """
+
+
+def engine_features() -> list[str]:
+    """What this helper can do beyond running a named preset, for `hello`.
+
+    Asked of the installed engine rather than assumed from the helper's version:
+    a helper running on an engine too old to take a definition must not be
+    handed a job that needs one.
+    """
+    try:
+        from gvanalysis.presets import custom_preset  # noqa: F401
+    except Exception:  # an engine before custom_preset, or none installed
+        return []
+    return [CUSTOM_PRESETS]
+
+
+def custom(name: str, spec: dict):
+    """A job's custom preset, built by the engine, or `PresetRefused`."""
+    from gvanalysis.presets import PresetConfigError, custom_preset
+
+    try:
+        return custom_preset(name, spec)
+    except PresetConfigError as e:
+        raise PresetRefused(f"Your preset could not be run: {e}") from e
 
 
 def available_presets() -> list[str]:
