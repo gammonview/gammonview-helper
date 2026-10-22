@@ -111,6 +111,15 @@ manifest still decides what is offered. Added within revision 4: an older
 helper ignores it, and against an older relay a helper hears nothing and
 keeps the six-hourly check.
 
+**`outdated`**, on the same answers, is true when this helper is older than
+the manifest's `minimum`, which a release raises when it fixes what analyses
+say. The relay then gives it no jobs — a poll waits and answers `job: null` —
+refuses a synced match it analysed itself (409, so it says hello again), and
+says sync is off in `hello` when sync analyses on that computer. Nothing else
+changes; it updates the way any helper does. A helper from 0.12.2 shows it in
+its menu (`update.held`). Added within revision 4: an older helper ignores the
+key and simply gets no work.
+
 **`available`** in `hello` is false from a helper that is running but not
 taking work: paused, or resting. The relay then leaves the machine offline
 where a hello used to clear it — which mattered, because the OpenGammon sync

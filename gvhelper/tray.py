@@ -121,6 +121,11 @@ def status_line(control: Control, percent: bool = True) -> str:
         if progress is not None:
             return f"Pausing after this match…{shown}"
         return "Paused"
+    if update.held() and control.state in ("idle", "resting"):
+        # Below the manifest's minimum: the relay gives it nothing until it
+        # updates, so "Ready for matches" would be a lie. A match it took
+        # before the minimum moved still finishes, and says so.
+        return "Update required to analyse matches"
     if control.state == "resting" and control.resting:
         # The computer's settings, not a button: say which, so nobody goes
         # looking for the Resume that is not the answer.

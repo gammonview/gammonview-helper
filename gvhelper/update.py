@@ -77,6 +77,27 @@ def heard() -> str | None:
         return _heard
 
 
+_held = False
+
+
+def hear_held(outdated) -> None:
+    """Note whether the relay is holding work back from this helper (`outdated`
+    in `hello` and `next-job`): it is older than the manifest's `minimum`, which
+    a release raises when it fixes what analyses say. The relay enforces it;
+    this is only so the menu can say why no matches arrive. An answer without
+    the key -- an older site -- changes nothing.
+    """
+    global _held
+    if isinstance(outdated, bool):
+        with _heard_lock:
+            _held = outdated
+
+
+def held() -> bool:
+    with _heard_lock:
+        return _held
+
+
 def wait_for_release(control, last: str | None) -> str | None:
     """Sleep until the next manifest check is due: after `CHECK_INTERVAL`, or
     sooner when the relay names a version other than `last`, the one it named

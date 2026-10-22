@@ -330,11 +330,13 @@ class WorkerClient:
         return body
 
     def _heard(self, body: dict) -> None:
-        """Keep the computer's settings, and the released helper version, from
-        any answer that carries them."""
+        """Keep the computer's settings, the released helper version, and
+        whether this one is too old to be given work, from any answer that
+        carries them."""
         if self.settings is not None:
             self.settings.update(body.get("settings"))
         update.hear(body.get("release"))
+        update.hear_held(body.get("outdated"))
 
     # --- OpenGammon sync (docs/OpenGammonSync.md in the GammonView repo) ------
 

@@ -413,6 +413,26 @@ def test_the_released_version_is_heard_from_hello_and_from_every_poll(cfg, monke
 
 
 @respx.mock
+def test_being_held_back_is_heard_and_so_is_its_end(cfg, monkeypatch):
+    from gvhelper import update
+
+    monkeypatch.setattr(update, "_held", False)
+    client = WorkerClient(cfg, "tok")
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(
+        200, json={"job": None, "outdated": True}))
+    client.next_job(wait=0)
+    assert update.held() is True
+    # An older site says nothing, which changes nothing.
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(200, json={"job": None}))
+    client.next_job(wait=0)
+    assert update.held() is True
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(
+        200, json={"job": None, "outdated": False}))
+    client.next_job(wait=0)
+    assert update.held() is False
+
+
+@respx.mock
 def test_a_job_judging_resignations_says_so(cfg):
     job = {"id": "j1", "preset": "fast", "match": "T0dYTQ==", "lease_seconds": 300}
     respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(

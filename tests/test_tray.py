@@ -26,6 +26,19 @@ def test_the_status_line_follows_the_loop():
     assert tray.status_line(c) == "Analysing a match… 37%"
 
 
+def test_a_helper_held_back_says_it_must_update(monkeypatch):
+    from gvhelper import update
+
+    monkeypatch.setattr(update, "_held", True)
+    c = Control()
+    c.state = "idle"
+    assert tray.status_line(c) == "Update required to analyse matches"
+    c.state = "busy"
+    c.progress = Progress()
+    c.progress.set(1, 2)
+    assert tray.status_line(c) == "Analysing a match… 50%"
+
+
 def test_pausing_mid_match_says_the_match_will_finish():
     c = Control()
     c.state = "busy"
