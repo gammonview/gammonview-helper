@@ -102,6 +102,15 @@ within one wait. A helper that rests by them — on battery, outside its hours �
 signs off with `/worker/offline` as Pause does, and says hello now and then to
 hear them change.
 
+**`release`**, on the same answers, is the helper version the site's
+`helper-release.json` names, or null when the relay could not read it. A
+helper that hears one it has not seen rereads the manifest straight away
+rather than at its next six-hourly check (`update.wait_for_release`), so its
+menu offers an update about when the site's banner starts asking for one. The
+manifest still decides what is offered. Added within revision 4: an older
+helper ignores it, and against an older relay a helper hears nothing and
+keeps the six-hourly check.
+
 **`available`** in `hello` is false from a helper that is running but not
 taking work: paused, or resting. The relay then leaves the machine offline
 where a hello used to clear it — which mattered, because the OpenGammon sync

@@ -210,3 +210,57 @@ def test_the_label_is_the_same_in_both_places():
     from gvhelper import tray
 
     assert tray.LAUNCHD_LABEL == update.LAUNCHD_LABEL
+
+
+# --- the relay's nudge ---------------------------------------------------------
+
+
+class Clock:
+    """A Control whose sleep moves a fake clock, and runs `during` each time."""
+
+    stopping = False
+
+    def __init__(self, monkeypatch, during=lambda t: None):
+        self.t = 0.0
+        self.during = during
+        self.sleeps = 0
+        monkeypatch.setattr(update.time, "monotonic", lambda: self.t)
+
+    def sleep(self, seconds):
+        self.sleeps += 1
+        self.t += seconds
+        self.during(self.t)
+
+
+@pytest.fixture
+def unheard(monkeypatch):
+    monkeypatch.setattr(update, "_heard", None)
+
+
+def test_a_new_release_from_the_relay_cuts_the_wait_short(monkeypatch, unheard):
+    update.hear("0.12.0")
+    clock = Clock(monkeypatch, during=lambda t: t >= 300 and update.hear("0.12.1"))
+    assert update.wait_for_release(clock, "0.12.0") == "0.12.1"
+    assert clock.t == 300, "within a minute of hearing it, not six hours"
+
+
+def test_the_same_release_waits_out_the_check_interval(monkeypatch, unheard):
+    update.hear("0.12.0")
+    clock = Clock(monkeypatch)
+    assert update.wait_for_release(clock, "0.12.0") == "0.12.0"
+    assert clock.t == update.CHECK_INTERVAL
+
+
+def test_an_older_site_that_names_nothing_is_the_six_hour_check(monkeypatch, unheard):
+    clock = Clock(monkeypatch)
+    assert update.wait_for_release(clock, None) is None
+    assert clock.t == update.CHECK_INTERVAL
+
+
+def test_only_a_version_is_heard(unheard):
+    for nothing in (None, "", 12, {"version": "0.12.1"}):
+        update.hear(nothing)
+    assert update.heard() is None
+    update.hear("0.12.1")
+    update.hear(None)  # an answer without one does not forget it
+    assert update.heard() == "0.12.1"

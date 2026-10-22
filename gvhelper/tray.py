@@ -456,11 +456,13 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
         # --- Update ----------------------------------------------------------
 
         def _watch_releases(self) -> None:
+            # Every six hours, and as soon as the relay names a new release.
+            said = None
             while not control.stopping:
                 release = update.latest(cfg)
                 if release is not None:
                     self._release = release
-                control.sleep(update.CHECK_INTERVAL)
+                said = update.wait_for_release(control, said)
 
         def _draw_update(self) -> None:
             release = self._release

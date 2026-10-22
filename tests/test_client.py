@@ -397,6 +397,22 @@ def test_the_computers_settings_are_kept_from_hello_and_from_every_poll(cfg):
 
 
 @respx.mock
+def test_the_released_version_is_heard_from_hello_and_from_every_poll(cfg, monkeypatch):
+    from gvhelper import update
+
+    monkeypatch.setattr(update, "_heard", None)
+    client = WorkerClient(cfg, "tok")  # with no settings holder, too
+    respx.post(f"{RELAY}/worker/hello").mock(return_value=httpx.Response(
+        200, json={"status": "ok", "release": "0.12.0"}))
+    client.register("Mac", "1.0.0", "bgsage", ["fast"], features=[])
+    assert update.heard() == "0.12.0"
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(
+        200, json={"job": None, "release": "0.12.1"}))
+    client.next_job(wait=0)
+    assert update.heard() == "0.12.1"
+
+
+@respx.mock
 def test_a_job_judging_resignations_says_so(cfg):
     job = {"id": "j1", "preset": "fast", "match": "T0dYTQ==", "lease_seconds": 300}
     respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(

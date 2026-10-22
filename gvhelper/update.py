@@ -27,6 +27,8 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping
@@ -44,6 +46,56 @@ LAUNCHD_LABEL = "com.gammonview.helper"
 #: How often the menu asks. A release is a few times a year, and the answer is
 #: a small static file from the site's own nginx.
 CHECK_INTERVAL = 6 * 60 * 60
+
+#: How often the menu looks at what the relay last said (`hear`), between
+#: those checks. Looking is free: it is a variable in this process.
+RELAY_LOOK_INTERVAL = 60
+
+_heard_lock = threading.Lock()
+_heard: str | None = None
+
+
+def hear(release) -> None:
+    """Note the helper version a relay answer named (`release` in `hello` and
+    `next-job`, since GammonView 1.11.1).
+
+    The site's banner reads the manifest on every page load, so without this a
+    release went out and the site said "choose Update" for up to six hours
+    before the menu had one. Every answer from the relay names the released
+    version instead, and when it moves the menu rereads the manifest at once
+    (`wait_for_release`). The manifest still decides: this only says when to
+    look. An answer without one -- an older site -- changes nothing.
+    """
+    global _heard
+    if isinstance(release, str) and release:
+        with _heard_lock:
+            _heard = release
+
+
+def heard() -> str | None:
+    with _heard_lock:
+        return _heard
+
+
+def wait_for_release(control, last: str | None) -> str | None:
+    """Sleep until the next manifest check is due: after `CHECK_INTERVAL`, or
+    sooner when the relay names a version other than `last`, the one it named
+    when the manifest was last read. Returns what it names now, for next time.
+
+    Against `last` rather than the manifest's version, so a relay and a
+    manifest that disagree -- a cached manifest, say -- cost one reread, not
+    one a minute.
+    """
+    deadline = time.monotonic() + CHECK_INTERVAL
+    while not control.stopping:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            break
+        control.sleep(min(RELAY_LOOK_INTERVAL, left))
+        said = heard()
+        if said is not None and said != last:
+            return said
+    return heard()
 
 
 def latest(cfg: Config, client: httpx.Client | None = None) -> dict | None:

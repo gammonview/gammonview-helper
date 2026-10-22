@@ -165,11 +165,12 @@ class HelperIcon:
             time.sleep(REFRESH_INTERVAL)
 
     def watch_releases(self) -> None:
+        said = None
         while not self.control.stopping:
             release = update.latest(self.cfg)
             if release is not None:
                 self.release = release
-            self.control.sleep(update.CHECK_INTERVAL)
+            said = update.wait_for_release(self.control, said)
 
     def ask(self, title: str, message: str) -> bool:
         if not self.asking.acquire(blocking=False):

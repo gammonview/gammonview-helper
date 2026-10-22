@@ -28,7 +28,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from . import USER_AGENT
+from . import USER_AGENT, update
 from .config import Config
 
 #: Which revision of the relay protocol this client implements.
@@ -330,9 +330,11 @@ class WorkerClient:
         return body
 
     def _heard(self, body: dict) -> None:
-        """Keep the computer's settings, from any answer that carries them."""
+        """Keep the computer's settings, and the released helper version, from
+        any answer that carries them."""
         if self.settings is not None:
             self.settings.update(body.get("settings"))
+        update.hear(body.get("release"))
 
     # --- OpenGammon sync (docs/OpenGammonSync.md in the GammonView repo) ------
 
