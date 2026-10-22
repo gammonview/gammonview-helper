@@ -144,7 +144,9 @@ def test_custom_presets_are_offered_exactly_when_the_engine_can_run_them():
 #: user can save a preset that fails every match it is given.
 SITE_ACCEPTS = [
     {"first_pass": "2ply"},
-    {"first_pass": "3ply", "second_pass": "rollout", "error_threshold": 0},
+    {"first_pass": "3ply", "second_pass": "truncated3", "error_threshold": 0},
+    {"first_pass": "3ply", "second_pass": {"checker": "4ply", "cube": "truncated3"}},
+    {"first_pass": "3ply", "second_pass": {"checker": "truncated2"}},
     {"first_pass": "3ply", "mid_pass": "4ply", "second_pass": "truncated2", "close_threshold": 0.08},
     {"first_pass": {"checker": "3ply"}, "mid_pass": {"cube": "truncated2"},
      "second_pass": "truncated2", "close_threshold": {"cube": 0.08},
@@ -166,7 +168,11 @@ SITE_REFUSES = [
      "close_threshold": {"checker": 0.08}},
     {"first_pass": "3ply", "second_pass": "truncated2", "error_threshold": -0.1},
     {"first_pass": "3ply", "second_pass": "truncated2", "error_threshold": True},
+    {"first_pass": "3ply", "second_pass": {"cube": "truncated2"}},
+    {"first_pass": "3ply", "second_pass": {"checker": "4ply", "move": "4ply"}},
 ]
+# Not in either list: a full rollout, which the engine runs and the site does
+# not offer until the engine defines one for a preset. Stricter is allowed.
 
 
 @needs_custom
