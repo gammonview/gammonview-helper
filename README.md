@@ -3,11 +3,10 @@
 Analyze your backgammon matches on your own computer, and see the results on
 [gammonview.com](https://gammonview.com).
 
-GammonView analyses matches on a shared server. That server is shared, so the
-deepest settings are not on its menu — a *World Class* run that takes a minute
-on your laptop would take an hour of a queue everybody else is waiting in. The
-helper moves that work to your machine: you keep using the website exactly as
-before, and the analysis happens at home.
+GammonView analyses matches inside your browser, which stops at 2-ply. The
+helper runs the deeper presets — up to *World Class*, with rollouts behind it —
+on your own computer instead: you keep using the website exactly as before, and
+the analysis happens at home.
 
 Nothing listens on a port. The helper dials out to gammonview.com, waits for
 work **you** queued from your own browser, runs it, and sends the result back.
@@ -76,8 +75,8 @@ gammonview-helper run
 
 Leave it running. Analyses you start on gammonview.com will now go to this
 computer, and the deeper presets appear in the menu. If the helper is not
-running, the website falls back to the shared server on its own — you never get
-an error for having closed it.
+running, the website analyses in your browser instead — you never get an error
+for having closed it.
 
 You can start it before linking. An unlinked helper waits for a credential
 rather than giving up, so the usual order — install, let it start, then link in
@@ -93,7 +92,7 @@ these controls:
 
 - **Pause / Resume.** A match already being analysed finishes first; after that
   the helper takes no more until you resume. The website stops offering this
-  computer at once, and sends your analyses to the shared server instead.
+  computer at once.
 - **Open GammonView.**
 - **Link This Computer…** — while it is not linked. Shows the word to pick
   and the link in a dialog, with a button to open the link in your browser,
