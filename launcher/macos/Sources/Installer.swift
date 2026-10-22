@@ -317,7 +317,9 @@ enum Installer {
     private static func installHelper(
         _ manifest: Manifest, onLine: @escaping (String) -> Void
     ) throws {
-        var arguments = ["tool", "install", "--force"]
+        // `--refresh-package`: the manifest names a version only once PyPI
+        // has it, but uv answers from its cached index for up to ten minutes.
+        var arguments = ["tool", "install", "--force", "--refresh-package", "gammonview-helper"]
         if let python = manifest.python, !python.isEmpty {
             arguments += ["--python", python]
         }

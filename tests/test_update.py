@@ -78,7 +78,7 @@ def test_installing_runs_what_the_installer_runs(tmp_path):
     where = update.target(str(root / "bin" / "gammonview-helper"))
     assert update.install(where, {"version": "0.5.0", "python": "3.13"}, run) is None
     assert seen["argv"] == [
-        str(root / "bin" / "uv"), "tool", "install", "--force",
+        str(root / "bin" / "uv"), "tool", "install", "--force", "--refresh-package", "gammonview-helper",
         "--python", "3.13", "gammonview-helper==0.5.0",
     ]
     assert seen["env"]["UV_TOOL_DIR"] == str(root / "tools")
@@ -126,7 +126,7 @@ def test_a_uv_tool_install_is_updated_with_the_persons_own_uv(tmp_path):
     update.install(where, {"version": "0.8.0", "python": "3.13"}, run)
     minor = f"{sys.version_info.major}.{sys.version_info.minor}"
     assert seen["argv"] == [
-        "/somewhere/uv", "tool", "install", "--force",
+        "/somewhere/uv", "tool", "install", "--force", "--refresh-package", "gammonview-helper",
         "--python", minor, "gammonview-helper==0.8.0",
     ], "keeps its own Python, and installs exactly the pinned version"
 

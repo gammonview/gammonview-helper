@@ -20,10 +20,10 @@ from gvhelper import update, winmaint
 def test_the_install_command_is_the_installers(tmp_path):
     # `Installer.InstallArguments`, with the installer's own uv.
     assert winmaint.install_argv(tmp_path, "0.9.1", "3.13") == [
-        str(tmp_path / "bin" / "uv.exe"), "tool", "install", "--force",
+        str(tmp_path / "bin" / "uv.exe"), "tool", "install", "--force", "--refresh-package", "gammonview-helper",
         "--python", "3.13", "gammonview-helper==0.9.1"]
     assert winmaint.install_argv(tmp_path, "0.9.1", None)[-2:] == [
-        "--force", "gammonview-helper==0.9.1"]
+        "gammonview-helper", "gammonview-helper==0.9.1"]
 
 
 def test_the_uv_environment_is_the_one_update_uses(tmp_path):

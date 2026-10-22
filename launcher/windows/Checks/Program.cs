@@ -61,10 +61,10 @@ Check("an empty site is not a site", Installer.GlobalArguments(M("")).Count == 0
 Console.WriteLine("InstallArguments -- the exact pinned version, on the pinned Python");
 Check("pinned",
     Same(Installer.InstallArguments(M(null)),
-        "tool", "install", "--force", "--python", "3.13", "gammonview-helper==0.8.0"));
+        "tool", "install", "--force", "--refresh-package", "gammonview-helper", "--python", "3.13", "gammonview-helper==0.8.0"));
 Check("no python pin means uv chooses",
     Same(Installer.InstallArguments(M(null, null)),
-        "tool", "install", "--force", "gammonview-helper==0.8.0"));
+        "tool", "install", "--force", "--refresh-package", "gammonview-helper", "gammonview-helper==0.8.0"));
 
 // --- UnlinkArguments ---
 

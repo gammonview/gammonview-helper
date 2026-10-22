@@ -90,7 +90,8 @@ def uv_environment(root: Path) -> dict[str, str]:
 
 def install_argv(root: Path, version: str, python: str | None) -> list[str]:
     """`Installer.InstallArguments`, run with the installer's `uv`."""
-    argv = [str(root / "bin" / "uv.exe"), "tool", "install", "--force"]
+    argv = [str(root / "bin" / "uv.exe"), "tool", "install", "--force",
+            "--refresh-package", "gammonview-helper"]
     if python:
         argv += ["--python", python]
     argv.append(f"gammonview-helper=={version}")

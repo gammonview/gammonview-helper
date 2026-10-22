@@ -326,7 +326,9 @@ namespace GammonView.Installer
 
         public static List<string> InstallArguments(Manifest manifest)
         {
-            var args = new List<string> { "tool", "install", "--force" };
+            // --refresh-package: the manifest names a version only once PyPI
+            // has it, but uv answers from its cached index for up to ten minutes.
+            var args = new List<string> { "tool", "install", "--force", "--refresh-package", "gammonview-helper" };
             if (!string.IsNullOrEmpty(manifest.Python)) { args.Add("--python"); args.Add(manifest.Python!); }
             args.Add("gammonview-helper==" + manifest.Version);
             return args;

@@ -230,7 +230,10 @@ def install(
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> str | None:
     """Install `release` over this helper. None, or what went wrong."""
-    argv = [where.uv, "tool", "install", "--force"]
+    # `--refresh-package`: the site names a version only once PyPI has it,
+    # but uv answers from its cached index for up to ten minutes, and in that
+    # window `==` the new version was "unsatisfiable" (0.12.1, 2026-10-22).
+    argv = [where.uv, "tool", "install", "--force", "--refresh-package", "gammonview-helper"]
     python = release.get("python") if where.python == "release" else where.python
     if isinstance(python, str) and python:
         argv += ["--python", python]
