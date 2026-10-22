@@ -33,8 +33,13 @@ from typing import Callable, Mapping
 
 import httpx
 
-from . import USER_AGENT
+from . import USER_AGENT, linuxapp
 from .config import Config
+
+#: The login item's launchd label: `LoginItem.swift` and
+#: `deploy/com.gammonview.helper.plist` both write it. Here rather than in
+#: `tray`, for `restart_login_item`.
+LAUNCHD_LABEL = "com.gammonview.helper"
 
 #: How often the menu asks. A release is a few times a year, and the answer is
 #: a small static file from the site's own nginx.
@@ -195,14 +200,18 @@ def restart_login_item(
     out. On Linux every running helper is sent SIGHUP, which `run` answers by
     `exec`ing itself. False where there is no login item to restart: Windows
     (see `winmaint`), or a helper that is not set up to start at login.
+
+    **It imports nothing.** It runs after `install` has replaced the package on
+    disk, so a module first imported here would be the new version's, loaded
+    beside the old ones already in memory: 0.11.0's `update`, importing `tray`
+    here, got a 0.12.0 `daemon` asking an 0.11.0 `runner` for a name it did not
+    have, and stopped before the restart. What it needs is imported with this
+    module, before the install.
     """
     if sys.platform.startswith("linux"):
-        from . import linuxapp
-
         return linuxapp.restart_running()
     if sys.platform != "darwin":
         return False
-    from .tray import LAUNCHD_LABEL
 
     plist = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
     if not plist.exists():

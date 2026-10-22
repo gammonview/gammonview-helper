@@ -176,3 +176,31 @@ def test_the_login_item_is_restarted_onto_the_new_code(tmp_path, monkeypatch):
     (agents / "com.gammonview.helper.plist").write_text("")
     assert update.restart_login_item(run) is True
     assert seen[-1][:3] == ["launchctl", "kickstart", "-k"]
+
+
+def test_the_restart_imports_nothing_from_the_new_install(tmp_path, monkeypatch):
+    """By the time it runs, the package on disk is the new version's. A module
+    it imported then would be loaded beside the old ones in memory, which is
+    how 0.11.0's `update` crashed before restarting: so every module it needs
+    must already be loaded, and blocking the rest changes nothing."""
+    class NewInstall:
+        def find_spec(self, name, path=None, target=None):
+            if name.startswith("gvhelper."):
+                raise ImportError(f"{name} imported after the install")
+
+    monkeypatch.setattr(update.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(update.linuxapp, "restart_running", lambda: True)
+    for name in [m for m in sys.modules if m.startswith("gvhelper.")]:
+        # `store` stays loaded: conftest reloads it before this is undone.
+        if name not in ("gvhelper.update", "gvhelper.config", "gvhelper.linuxapp", "gvhelper.store"):
+            monkeypatch.delitem(sys.modules, name)
+    run = lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "", "")
+    # Taken out again here, not by monkeypatch: conftest's teardown imports.
+    blocker = NewInstall()
+    sys.meta_path.insert(0, blocker)
+    try:
+        for platform in ("darwin", "linux", "win32"):
+            monkeypatch.setattr(update.sys, "platform", platform)
+            update.restart_login_item(run)
+    finally:
+        sys.meta_path.remove(blocker)

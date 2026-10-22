@@ -47,9 +47,8 @@ from .config import Config, machine_name
 from .daemon import Control, sign_off
 from .store import load_token
 
-#: The login item's launchd label: `LoginItem.swift` and
-#: `deploy/com.gammonview.helper.plist` both write it.
-LAUNCHD_LABEL = "com.gammonview.helper"
+#: The login item's launchd label, which `update` holds.
+LAUNCHD_LABEL = update.LAUNCHD_LABEL
 
 #: How often the menu redraws from `Control`. The progress the menu shows is
 #: posted to the site once a second, so faster would only redraw the same
