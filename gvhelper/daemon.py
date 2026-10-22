@@ -32,8 +32,10 @@ from pathlib import Path
 from . import USER_AGENT, __version__
 from .client import POLL_WAIT, Job, RelayError, Unauthorized, WorkerClient
 from .config import Config, machine_name
+from . import machine, power
 from .runner import (
-    PresetRefused, Progress, analyze, available_presets, engine_version, lower_priority,
+    PresetRefused, Progress, analyze, available_presets, engine_features, engine_version,
+    lower_priority,
 )
 from .ogsync import LocalWork, Syncer
 from .store import load_token
@@ -80,6 +82,15 @@ PAUSE, RESUME, PAUSED = "pause", "resume", "paused"
 #: How often a running helper looks at `PAUSE_FILE`: a stat a second on a
 #: machine that is mostly waiting, and the longest a terminal waits to hear.
 FOLLOW_INTERVAL = 1.0
+
+#: How often a resting helper -- on battery, or outside its hours, by its
+#: computer's settings -- looks again. Half a minute: plugging a laptop in
+#: should feel answered, and the probe costs a subprocess on a Mac.
+REST_INTERVAL = 30.0
+
+#: How often a resting helper says hello, to hear a settings change it would
+#: otherwise only hear on a poll it is not making.
+REST_HELLO_INTERVAL = 60.0
 
 
 def read_flag(path: Path | None) -> str | None:
@@ -130,6 +141,9 @@ class Control:
         self.account: str | None = None
         #: The OpenGammon sync's line for the menu, or None when sync is off.
         self.og_line: str | None = None
+        #: Why this computer is taking no work by its settings ("On battery"),
+        #: or None. Not a pause: nobody pressed anything, and it lifts itself.
+        self.resting: str | None = None
 
     @property
     def paused(self) -> bool:
@@ -238,7 +252,12 @@ def _log(message: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
 
 
-def run_job(client: WorkerClient, job: Job, cfg: Config, control: Control | None = None) -> None:
+def _parallelism(cfg: Config, settings: machine.Settings | None) -> tuple[int, int]:
+    return machine.parallelism(cfg.jobs, cfg.threads, settings or machine.Settings())
+
+
+def run_job(client: WorkerClient, job: Job, cfg: Config, control: Control | None = None,
+            settings: machine.Settings | None = None) -> None:
     """Analyse one job and deliver it, or report why not.
 
     The analysis runs on a thread so this one can keep posting progress -- which
@@ -249,23 +268,27 @@ def run_job(client: WorkerClient, job: Job, cfg: Config, control: Control | None
     """
     progress = Progress()
     result: dict = {}
+    jobs, threads = _parallelism(cfg, settings)
 
     def work() -> None:
         try:
             if job.preset_spec is not None:
                 result["bytes"] = analyze(
                     job.match_bytes, job.preset_name or "", progress,
-                    jobs=cfg.jobs, threads=cfg.threads, spec=job.preset_spec,
+                    jobs=jobs, threads=threads, spec=job.preset_spec,
+                    resign_errors=job.resign_errors,
                 )
             else:
                 result["bytes"] = analyze(
-                    job.match_bytes, job.preset, progress, jobs=cfg.jobs, threads=cfg.threads
+                    job.match_bytes, job.preset, progress, jobs=jobs, threads=threads,
+                    resign_errors=job.resign_errors,
                 )
         except BaseException as e:  # noqa: BLE001 - reported, then re-raised to nobody
             result["error"] = e
 
     thread = threading.Thread(target=work, name=f"analyze-{job.id}", daemon=True)
-    _log(f"analyzing {job.id} ({job.preset or 'default preset'})")
+    _log(f"analyzing {job.id} ({job.preset or 'default preset'}"
+         f"{', judging resignations' if job.resign_errors else ''})")
     if control is not None:
         control.progress = progress
     thread.start()
@@ -315,7 +338,8 @@ def run_job(client: WorkerClient, job: Job, cfg: Config, control: Control | None
     _log(f"delivered {job.id} ({total or done} decisions, {len(payload)} bytes)")
 
 
-def run_synced(item: dict, cfg: Config, control: Control | None = None) -> None:
+def run_synced(item: dict, cfg: Config, control: Control | None = None,
+               settings: machine.Settings | None = None) -> None:
     """Analyse one synced OpenGammon `.mat` for the sync thread waiting on it.
 
     `run_job`'s shape without the relay: there is no job to post progress to,
@@ -327,12 +351,14 @@ def run_synced(item: dict, cfg: Config, control: Control | None = None) -> None:
     progress = Progress()
     item["progress"] = progress  # read by the sync thread, for the button
     result: dict = {}
+    jobs, threads = _parallelism(cfg, settings)
 
     def work() -> None:
         try:
             result["bytes"] = analyze(
                 item["mat"].encode("utf-8"), item.get("preset") or "", progress,
-                jobs=cfg.jobs, threads=cfg.threads, suffix=".mat",
+                jobs=jobs, threads=threads, suffix=".mat",
+                spec=item.get("spec"), resign_errors=bool(item.get("resign_errors")),
             )
         except BaseException as e:  # noqa: BLE001 - handed to the sync thread
             result["error"] = e
@@ -358,18 +384,28 @@ def _finish(item: dict, **kw) -> None:
     item["_work"].finish(item, **kw)
 
 
-def start_sync(cfg: Config, token: str, name: str, control: Control | None) -> tuple[Syncer, threading.Thread]:
+def start_sync(cfg: Config, token: str, name: str, control: Control | None,
+               current: machine.Current | None = None,
+               available=None) -> tuple[Syncer, threading.Thread]:
     """The OpenGammon sync, on a thread of its own with a client of its own.
 
     Its own `WorkerClient` so the sync's requests never queue behind the work
     loop's held poll. It reads its setting from `hello`; while the player has
     sync off, all it does is ask again every few minutes.
+
+    Its hellos keep this computer's settings in `current`, as the loop's own
+    polls do, and say whether the loop is taking work (`available`): a hello
+    from a paused helper used to clear the site's pause, and put the computer
+    back in the menu within five minutes of pressing Pause.
     """
-    sync_client = WorkerClient(cfg, token)
+    sync_client = WorkerClient(cfg, token, settings=current)
+    if available is not None:
+        sync_client.available = available
     syncer = Syncer(
         sync_client,
         lambda: sync_client.register(name, __version__, engine_version(), available_presets()),
         presets=available_presets,
+        features=engine_features,
         work=LocalWork(),
         control=control,
     )
@@ -459,8 +495,19 @@ def serve(
     job has nowhere else to go until its lease lapses.
     """
     lower_priority(cfg.nice)
-    client = WorkerClient(cfg, token)
+    # This computer's settings, as the site last said them: one holder, kept
+    # by both this loop's client and the sync thread's.
+    current = machine.Current()
+    client = WorkerClient(cfg, token, settings=current)
     name = machine_name()
+    #: Why the settings have this computer resting, or None. A list so the
+    #: `available` closure below reads the loop's latest answer.
+    resting: list[str | None] = [None]
+
+    def available() -> bool:
+        return resting[0] is None and not (control is not None and control.paused)
+
+    client.available = available
 
     try:
         account = client.hello(name, __version__, engine_version(), available_presets())
@@ -480,11 +527,12 @@ def serve(
 
     # Not under `once`, which is one poll-and-work cycle for the tests and has
     # nothing for a background thread to do.
-    syncer = None if once else start_sync(cfg, token, name, control)[0]
+    syncer = None if once else start_sync(cfg, token, name, control, current, available)[0]
     work = syncer.work if syncer is not None else None
 
     delay = RETRY_MIN
     signed_off = False
+    next_hello = 0.0
     try:
         while True:
             if control is not None:
@@ -501,25 +549,72 @@ def serve(
                     control.state = "paused"
                     control.wait_while_paused()
                     continue
-                if signed_off:
+                if signed_off and resting[0] is None:
                     _log("resumed")
                     signed_off = False
                 control.state = "idle"
+
+            # Resting by this computer's settings: like a pause, except that
+            # nobody pressed anything and it lifts itself. Signed off once, so
+            # the site stops offering this computer at once; a hello now
+            # and then, unavailable, to hear the settings change.
+            settings = current.get()
+            reason = machine.resting(
+                settings, at=time.time(),
+                on_battery=None if settings.on_battery else power.on_battery(),
+            )
+            if reason is not None:
+                if resting[0] is None:
+                    resting[0] = reason
+                    sign_off(client)
+                    signed_off = True
+                    _log(f"not taking work: {reason[0].lower()}{reason[1:]}")
+                    next_hello = time.monotonic() + REST_HELLO_INTERVAL
+                elif time.monotonic() >= next_hello:
+                    next_hello = time.monotonic() + REST_HELLO_INTERVAL
+                    try:
+                        client.register(name, __version__, engine_version(), available_presets())
+                    except Unauthorized as e:
+                        _log(str(e))
+                        return 2
+                    except RelayError as e:
+                        _log(f"could not hear this computer's settings: {e}")
+                resting[0] = reason
+                if control is not None:
+                    control.resting = reason
+                    control.state = "resting"
+                if once:
+                    return 0
+                _sleep(control, REST_INTERVAL)
+                continue
+            if resting[0] is not None:
+                resting[0] = None
+                signed_off = False
+                if control is not None:
+                    control.resting = None
+                    control.state = "idle"
+                _log("taking work again")
+
             try:
                 # A synced match waiting to be analysed asks without holding the
                 # poll open: the site's own jobs still go first, but an empty
-                # queue should not cost the sync twenty seconds a match.
+                # queue should not cost the sync twenty seconds a match -- unless
+                # the settings hold synced matches while the computer is in use.
                 waiting = work is not None and work.pending()
-                job = client.next_job(wait=0 if waiting else POLL_WAIT)
+                held = waiting and machine.holds_sync(
+                    settings, idle=power.idle_seconds() if settings.sync_when_idle else None)
+                job = client.next_job(wait=0 if waiting and not held else POLL_WAIT)
                 delay = RETRY_MIN
-                if job is None and work is not None:
+                # A poll may have brought new settings; the match runs by them.
+                settings = current.get()
+                if job is None and work is not None and not held:
                     item = work.take()
                     if item is not None:
                         item["_work"] = work
                         if control is not None:
                             control.state = "busy"
                         try:
-                            run_synced(item, cfg, control)
+                            run_synced(item, cfg, control, settings)
                         finally:
                             if control is not None:
                                 control.progress = None
@@ -527,7 +622,7 @@ def serve(
                     if control is not None:
                         control.state = "busy"
                     try:
-                        run_job(client, job, cfg, control)
+                        run_job(client, job, cfg, control, settings)
                     finally:
                         if control is not None:
                             control.progress = None

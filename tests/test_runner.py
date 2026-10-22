@@ -130,10 +130,22 @@ needs_custom = pytest.mark.skipif(
 )
 
 
-def test_custom_presets_are_offered_exactly_when_the_engine_can_run_them():
-    """A helper on an engine too old to take a definition must not say it can:
-    the relay would hand it jobs it can only fail."""
-    assert runner.engine_features() == (["custom_presets"] if _engine_takes_definitions() else [])
+def _engine_judges_resigns() -> bool:
+    try:
+        import inspect
+
+        from gvanalysis.match import analyze_ogxm
+    except Exception:
+        return False
+    return "resign_errors" in inspect.signature(analyze_ogxm).parameters
+
+
+def test_features_are_offered_exactly_when_the_engine_has_them():
+    """A helper on an engine too old to take a definition, or to judge
+    resignations, must not say it can: the relay would hand it jobs it can
+    only fail, or run without what was asked for."""
+    assert ("custom_presets" in runner.engine_features()) == _engine_takes_definitions()
+    assert ("resign_errors" in runner.engine_features()) == _engine_judges_resigns()
 
 
 #: Definitions the website's settings page accepts (`helpersettings.checked_spec`
@@ -206,3 +218,20 @@ def test_a_custom_preset_analyses_and_is_labelled_as_one():
     doc = read_gvab(gzip.decompress(out))
     labels = [info.get("preset") for info in doc["analyses_info"]]
     assert runner.custom("my-quick", spec).label in labels
+
+
+@needs_engine
+@pytest.mark.slow
+@pytest.mark.skipif(runner.RESIGN_ERRORS not in runner.engine_features(),
+                    reason="the installed engine predates resign errors")
+def test_judging_resignations_is_in_the_label():
+    """The relay hands this helper a job judging resignations only because
+    `engine_features` said it could; the label is how the analysis says it did."""
+    from gvformat import read_gvab
+
+    spec = {"first_pass": "1ply"}
+    out = runner.analyze(GOLDEN.read_bytes(), "my-quick", runner.Progress(),
+                         jobs=1, threads=1, spec=spec, resign_errors=True)
+    doc = read_gvab(gzip.decompress(out))
+    labels = [info.get("preset") for info in doc["analyses_info"]]
+    assert f"{runner.custom('my-quick', spec).label}+resign" in labels

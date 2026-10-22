@@ -118,6 +118,10 @@ def status_line(control: Control, percent: bool = True) -> str:
         if progress is not None:
             return f"Pausing after this match…{shown}"
         return "Paused"
+    if control.state == "resting" and control.resting:
+        # The computer's settings, not a button: say which, so nobody goes
+        # looking for the Resume that is not the answer.
+        return f"Not taking matches: {control.resting[0].lower()}{control.resting[1:]}"
     return {
         "starting": "Starting…",
         "unlinked": "Not linked to an account",

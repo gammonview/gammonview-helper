@@ -344,18 +344,66 @@ def test_an_http_error_still_carries_the_relay_s_own_words(cfg):
 def test_hello_says_what_else_this_machine_can_do(cfg, monkeypatch):
     """Without `features` the site would stop offering the account's own
     presets, so it is sent on every hello, from what the engine can do."""
-    from gvhelper import runner
+    from gvhelper import machine, runner
 
     route = respx.post(f"{RELAY}/worker/hello").mock(
         return_value=httpx.Response(200, json={"status": "ok"})
     )
+    monkeypatch.setattr(machine, "_capabilities", ["battery"])
     monkeypatch.setattr(runner, "engine_features", lambda: ["custom_presets"])
     WorkerClient(cfg, "tok").hello("Mac", "1.0.0", "bgsage", ["fast"])
-    assert json.loads(route.calls.last.request.read())["features"] == ["custom_presets"]
+    assert json.loads(route.calls.last.request.read())["features"] == [
+        "custom_presets", "machine_settings", "battery"]
 
     monkeypatch.setattr(runner, "engine_features", lambda: [])
     WorkerClient(cfg, "tok").register("Mac", "1.0.0", "bgsage", ["fast"])
-    assert json.loads(route.calls.last.request.read())["features"] == []
+    assert json.loads(route.calls.last.request.read())["features"] == [
+        "machine_settings", "battery"]
+
+
+@respx.mock
+def test_hello_says_whether_this_helper_is_taking_work(cfg):
+    """So a paused helper's sync thread can say hello without putting the
+    computer back in the site's menu."""
+    route = respx.post(f"{RELAY}/worker/hello").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    client = WorkerClient(cfg, "tok")
+    client.register("Mac", "1.0.0", "bgsage", ["fast"], features=[])
+    assert json.loads(route.calls.last.request.read())["available"] is True
+    client.available = lambda: False
+    client.register("Mac", "1.0.0", "bgsage", ["fast"], features=[])
+    assert json.loads(route.calls.last.request.read())["available"] is False
+
+
+@respx.mock
+def test_the_computers_settings_are_kept_from_hello_and_from_every_poll(cfg):
+    from gvhelper.machine import Current
+
+    current = Current()
+    client = WorkerClient(cfg, "tok", settings=current)
+    respx.post(f"{RELAY}/worker/hello").mock(return_value=httpx.Response(
+        200, json={"status": "ok", "settings": {"cores": "half"}}))
+    client.register("Mac", "1.0.0", "bgsage", ["fast"], features=[])
+    assert current.get().cores == "half"
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(
+        200, json={"job": None, "settings": {"cores": "quarter", "on_battery": False}}))
+    assert client.next_job(wait=0) is None
+    assert (current.get().cores, current.get().on_battery) == ("quarter", False)
+    # A site older than settings says nothing about them, and nothing changes.
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(200, json={"job": None}))
+    client.next_job(wait=0)
+    assert current.get().cores == "quarter"
+
+
+@respx.mock
+def test_a_job_judging_resignations_says_so(cfg):
+    job = {"id": "j1", "preset": "fast", "match": "T0dYTQ==", "lease_seconds": 300}
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(
+        200, json={"job": {**job, "resign_errors": True}}))
+    assert WorkerClient(cfg, "tok").next_job(wait=0).resign_errors is True
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(200, json={"job": job}))
+    assert WorkerClient(cfg, "tok").next_job(wait=0).resign_errors is False
 
 
 @respx.mock

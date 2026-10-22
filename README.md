@@ -233,9 +233,33 @@ actually got — on a machine with no credential store it falls back to a
 | `nice` | 10 | how hard the helper tries to stay out of your way |
 
 The parallelism is sized by the engine, from measurements it keeps for the
-purpose; set either to a number if you want a hard cap, and it will be kept.
+purpose; set either to a number if you want a hard cap, and it will be kept —
+over the site's "how much of this computer" below, too.
 `nice` is what makes the helper something you forget is running — it yields to
 whatever you are actually doing, and every engine worker inherits it.
+
+### This computer's settings
+
+A few settings are this computer's, and are chosen on gammonview.com under
+**My Computers → Helper settings**, one card per linked computer:
+
+- **How much of this computer to use** — all of it (the engine's own sizing),
+  about half, or about a quarter of its cores. A `jobs` or `threads` in
+  `config.json` wins over it.
+- **Analyse while running on battery** — offered on a computer with a battery.
+  With it off, an unplugged laptop takes no matches until it is plugged in.
+- **When** — any time, or only between two times on this computer's clock.
+- **Fetch and analyse OpenGammon matches on this computer**, and, beneath it,
+  **wait until I'm away from this computer**: synced matches are analysed only
+  once the keyboard and mouse have been left alone for five minutes, so the
+  sync never slows the computer while you use it. Offered where the helper can
+  tell. Matches you analyse yourself never wait — sending one means you are at
+  a computer, very often this one.
+
+The helper hears a change on its next poll, within half a minute. Outside its
+hours or on battery it behaves exactly as if paused — it takes no matches, and
+one already being analysed is finished — and the menu says why: *Not taking
+matches: on battery*. It picks up again by itself.
 
 ### Your own presets
 
@@ -245,7 +269,12 @@ linked to it can run them: a match sent with one carries the preset's definition
 to whichever computer takes it, and nothing is stored on this one. The analysis
 is labelled `custom/<name>@<digest>`, so it says exactly which definition made
 it. This needs an engine new enough to take a definition; `hello` tells the site
-whether this computer's engine can, and an older helper is never sent one.
+whether this computer's engine can, and an older helper is never sent one. The
+same goes for the OpenGammon sync, whose level may be one of your presets.
+
+**Judging accepted resignations** is an option on the same page, also your
+account's. A match sent with it on is analysed judging them and labelled
+`<preset>+resign`; only a computer whose engine can do that is given one.
 
 ## Licence
 

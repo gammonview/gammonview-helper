@@ -404,3 +404,91 @@ def test_a_refused_definition_is_reported_in_the_engines_words(cfg, monkeypatch)
     assert daemon.serve(cfg, "tok", once=True) == 0
     sent = failed.calls.last.request.read().decode()
     assert "Your preset could not be run" in sent and "PresetRefused" not in sent
+
+
+# --- this computer's settings ------------------------------------------------------
+
+
+@respx.mock
+def test_a_share_of_the_computer_caps_the_engine(cfg, monkeypatch):
+    """"About half" on an eight-core computer is one decision at a time on four
+    cores; `config.json` caps would win, and here there are none."""
+    from gvhelper import machine
+
+    monkeypatch.setattr(machine.os, "cpu_count", lambda: 8)
+    respx.post(f"{RELAY}/worker/hello").mock(return_value=httpx.Response(
+        200, json={"settings": {"cores": "half"}}))
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(200, json=_job()))
+    respx.post(f"{RELAY}/worker/jobs/j1/progress").mock(return_value=httpx.Response(200, json={}))
+    respx.post(f"{RELAY}/worker/jobs/j1/result").mock(return_value=httpx.Response(200, json={}))
+    seen = {}
+
+    def fake_analyze(match_bytes, preset, progress, **kw):
+        seen.update(jobs=kw["jobs"], threads=kw["threads"], resign=kw.get("resign_errors"))
+        return b"gz"
+
+    monkeypatch.setattr(daemon, "analyze", fake_analyze)
+    assert daemon.serve(cfg, "tok", once=True) == 0
+    assert seen == {"jobs": 1, "threads": 4, "resign": False}
+
+
+@respx.mock
+def test_a_job_judging_resignations_is_analysed_judging_them(cfg, monkeypatch):
+    respx.post(f"{RELAY}/worker/hello").mock(return_value=httpx.Response(200, json={}))
+    job = _job()
+    job["job"]["resign_errors"] = True
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(200, json=job))
+    respx.post(f"{RELAY}/worker/jobs/j1/progress").mock(return_value=httpx.Response(200, json={}))
+    respx.post(f"{RELAY}/worker/jobs/j1/result").mock(return_value=httpx.Response(200, json={}))
+    seen = {}
+    monkeypatch.setattr(daemon, "analyze",
+                        lambda m, p, pr, **kw: seen.update(resign=kw.get("resign_errors")) or b"gz")
+    assert daemon.serve(cfg, "tok", once=True) == 0
+    assert seen == {"resign": True}
+
+
+@respx.mock
+def test_on_battery_with_that_off_the_helper_signs_off_and_rests(cfg, monkeypatch):
+    """Like a pause, without anybody pressing it: the site is told at once, no
+    poll is made, and the menu says why."""
+    from gvhelper.tray import status_line
+
+    hello = respx.post(f"{RELAY}/worker/hello").mock(return_value=httpx.Response(
+        200, json={"settings": {"on_battery": False}}))
+    offline = respx.post(f"{RELAY}/worker/offline").mock(return_value=httpx.Response(200, json={}))
+    poll = respx.get(f"{RELAY}/worker/next-job").mock(
+        return_value=httpx.Response(200, json={"job": None}))
+    monkeypatch.setattr(daemon.power, "on_battery", lambda: True)
+    monkeypatch.setattr(daemon, "REST_INTERVAL", 0.01)
+    monkeypatch.setattr(daemon, "REST_HELLO_INTERVAL", 0.0)
+    control = daemon.Control()
+    t = threading.Thread(target=daemon.serve, args=(cfg, "tok"), kwargs={"control": control},
+                         daemon=True)
+    t.start()
+    for _ in range(200):
+        if control.state == "resting":
+            break
+        threading.Event().wait(0.01)
+    assert control.state == "resting"
+    assert status_line(control) == "Not taking matches: on battery"
+    assert offline.call_count == 1 and poll.call_count == 0
+    # A hello while resting -- to hear its settings -- says it is not taking
+    # work, so neither it nor the sync thread's can undo the sign-off.
+    import json
+    said = hello.call_count
+    for _ in range(200):
+        if hello.call_count > said:
+            break
+        threading.Event().wait(0.01)
+    assert json.loads(hello.calls.last.request.read())["available"] is False
+
+    # Plugged in: it takes work again, by itself.
+    monkeypatch.setattr(daemon.power, "on_battery", lambda: False)
+    for _ in range(300):
+        if poll.call_count:
+            break
+        threading.Event().wait(0.01)
+    assert poll.call_count >= 1
+    assert control.resting is None
+    control.stop()
+    t.join(3)

@@ -120,6 +120,7 @@ def analyze(
     threads: int = 0,
     suffix: str = ".gvab",
     spec: dict | None = None,
+    resign_errors: bool = False,
 ) -> bytes:
     """Analyse OGXM binary and return the gzipped analysed `.gvab`.
 
@@ -140,6 +141,11 @@ def analyze(
     then its name, and the analysis is labelled `custom/<name>@<digest>`. Built
     before the match is written anywhere, so a definition the engine refuses
     costs nothing but the sentence saying why.
+
+    `resign_errors` judges accepted resignations, and the analysis is labelled
+    `+resign`. Passed only when asked for, so an engine from before the option
+    is called exactly as it always was -- the relay never hands this helper
+    such a job unless `engine_features` said it could run one.
     """
     chosen = custom(preset, spec) if spec is not None else (preset or None)
     fd, path = tempfile.mkstemp(suffix=suffix)
@@ -155,6 +161,7 @@ def analyze(
                 threads=threads,
                 quiet=True,
                 show_progress=False,
+                **({"resign_errors": True} if resign_errors else {}),
             )
         )
     finally:
@@ -198,6 +205,10 @@ def engine_version() -> str:
 #: says this in its `hello`.
 CUSTOM_PRESETS = "custom_presets"
 
+#: The feature word for an engine that can judge accepted resignations; the
+#: relay gives a job asking for that only to a helper that says this.
+RESIGN_ERRORS = "resign_errors"
+
 
 class PresetRefused(ValueError):
     """The engine would not run a custom preset's definition.
@@ -215,11 +226,22 @@ def engine_features() -> list[str]:
     a helper running on an engine too old to take a definition must not be
     handed a job that needs one.
     """
+    out = []
     try:
         from gvanalysis.presets import custom_preset  # noqa: F401
+        out.append(CUSTOM_PRESETS)
     except Exception:  # an engine before custom_preset, or none installed
-        return []
-    return [CUSTOM_PRESETS]
+        pass
+    try:
+        import inspect
+
+        from gvanalysis.match import analyze_ogxm
+
+        if "resign_errors" in inspect.signature(analyze_ogxm).parameters:
+            out.append(RESIGN_ERRORS)
+    except Exception:  # an engine before the option, or none installed
+        pass
+    return out
 
 
 def custom(name: str, spec: dict):

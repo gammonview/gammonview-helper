@@ -48,7 +48,7 @@ from .config import Config
 #:
 #: Bump it when a route, a field or a status code changes meaning -- not when
 #: this package is released, which is what the version above is for.
-RELAY_CONTRACT = "3"
+RELAY_CONTRACT = "4"
 
 #: What this client sends as its `User-Agent`: the package version and the
 #: contract it speaks. The relay's `version` field is deliberately *not* this
@@ -201,6 +201,8 @@ class Job:
     #: definition. Both None for a named preset.
     preset_name: str | None = None
     preset_spec: dict | None = None
+    #: Judge accepted resignations: the account's option, sent with the job.
+    resign_errors: bool = False
 
 
 class PairingClient:
@@ -258,8 +260,16 @@ class WorkerClient:
     the difference between a few thousand handshakes and one.
     """
 
-    def __init__(self, cfg: Config, token: str, client: httpx.Client | None = None):
+    def __init__(self, cfg: Config, token: str, client: httpx.Client | None = None,
+                 settings=None):
         self.cfg = cfg
+        #: Where the site's settings for this computer go when an answer
+        #: carries them (`machine.Current`); None to ignore them.
+        self.settings = settings
+        #: Whether this helper is taking work, said with every `hello` so a
+        #: paused or resting one can say hello without being offered matches.
+        #: The daemon replaces it; anything else is always available.
+        self.available = lambda: True
         self._client = client or httpx.Client(
             timeout=REQUEST_TIMEOUT,
             headers={"User-Agent": CLIENT_AGENT, "Authorization": f"Bearer {token}"},
@@ -293,20 +303,20 @@ class WorkerClient:
         no route of its own to poll. An empty dict from a site that sent
         nothing readable.
 
-        `features` defaults to what the installed engine can do
-        (`runner.engine_features`), so no caller can forget to say it -- a
-        hello without it reads as a helper that cannot run custom presets, and
-        the site would stop offering them.
+        `features` defaults to what this helper can do
+        (`machine.helper_features`: its engine's, and this computer's), so no
+        caller can forget to say it -- a hello without it reads as a helper that
+        cannot run custom presets, and the site would stop offering them.
         """
         if features is None:
-            from .runner import engine_features
+            from .machine import helper_features
 
-            features = engine_features()
+            features = helper_features()
         response = _check(
             _send(self._client, "POST",
                 f"{self._base}/hello",
                 json={"name": name, "version": version, "engine": engine, "presets": presets,
-                      "features": features},
+                      "features": features, "available": bool(self.available())},
             ),
             "Could not register this computer.",
         )
@@ -314,7 +324,15 @@ class WorkerClient:
             body = response.json()
         except ValueError:
             return {}
-        return body if isinstance(body, dict) else {}
+        if not isinstance(body, dict):
+            return {}
+        self._heard(body)
+        return body
+
+    def _heard(self, body: dict) -> None:
+        """Keep the computer's settings, from any answer that carries them."""
+        if self.settings is not None:
+            self.settings.update(body.get("settings"))
 
     # --- OpenGammon sync (docs/OpenGammonSync.md in the GammonView repo) ------
 
@@ -427,7 +445,9 @@ class WorkerClient:
                 time.sleep(POLL_GATEWAY_FLOOR - slept)
             return None
         _check(r, "Could not ask for work.")
-        job = r.json().get("job")
+        body = r.json()
+        self._heard(body)
+        job = body.get("job")
         if not job:
             return None
         spec = job.get("preset_spec")
@@ -441,6 +461,7 @@ class WorkerClient:
             # expansion cheap. The result goes back as raw bytes instead.
             match_bytes=base64.b64decode(job["match"]),
             lease_seconds=int(job.get("lease_seconds") or 0),
+            resign_errors=job.get("resign_errors") is True,
         )
 
     def progress(self, job_id: str, done: int, total: int) -> None:

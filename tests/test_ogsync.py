@@ -315,6 +315,47 @@ def test_a_preset_the_engine_dropped_falls_back_to_its_default(allowance):
     assert s.preset() is None
 
 
+def _own(account, allowance, features):
+    account.state.update(preset="custom/my-deep", preset_name="my-deep",
+                         preset_spec={"first_pass": "3ply"}, resign_errors=True)
+    s = Syncer(account, account.register, presets=lambda: ["fast"], features=lambda: features,
+               og=FakeOg([], allowance), allowance=allowance, now=lambda: NOW)
+    s.refresh()
+    return s
+
+
+def test_the_accounts_own_sync_preset_runs_its_definition(allowance):
+    s = _own(FakeAccount(analysis="local"), allowance, ["custom_presets", "resign_errors"])
+    assert (s.preset(), s.spec(), s.resign_errors()) == ("my-deep", {"first_pass": "3ply"}, True)
+
+
+def test_an_engine_that_cannot_run_them_falls_back_to_its_default(allowance):
+    """And analyses without judging resignations, which its label then says."""
+    s = _own(FakeAccount(analysis="local"), allowance, [])
+    assert (s.preset(), s.spec(), s.resign_errors()) == (None, None, False)
+
+
+def test_the_definition_and_the_option_reach_the_analysis(allowance):
+    import threading
+
+    work = LocalWork()
+    out = {}
+
+    def submit():
+        out["gvab"] = work.submit("mat", "my-deep", "m1", spec={"first_pass": "3ply"},
+                                  resign_errors=True)
+
+    t = threading.Thread(target=submit)
+    t.start()
+    while (item := work.take()) is None:
+        threading.Event().wait(0.01)
+    assert (item["preset"], item["spec"], item["resign_errors"]) == (
+        "my-deep", {"first_pass": "3ply"}, True)
+    work.finish(item, result=b"gz")
+    t.join(2)
+    assert out["gvab"] == b"gz"
+
+
 def test_quitting_releases_a_sync_waiting_on_local_analysis():
     import threading
 

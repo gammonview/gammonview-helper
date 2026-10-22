@@ -1,4 +1,4 @@
-# The relay protocol, revision 3
+# The relay protocol, revision 4
 
 What this package talks to, and the one document that has to stay true when the
 two halves of it are maintained apart.
@@ -45,7 +45,7 @@ rather than offering another go.
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| POST | `/worker/hello` | name, version, engine, presets |
+| POST | `/worker/hello` | name, version, engine, presets, features, available |
 | GET | `/worker/next-job?wait=` | long poll; server clamps `wait` to **25s** |
 | POST | `/worker/jobs/{id}/progress` | also the lease renewal |
 | POST | `/worker/jobs/{id}/result` | raw `application/octet-stream` body |
@@ -78,6 +78,34 @@ whose upstream is down answers instantly and the alternative is a busy loop.
 The match arrives base64-encoded inside JSON; the result goes back as a raw
 gzipped `.gvab` body. Not symmetric, and deliberately: the job envelope has
 fields beside the bytes, the result is only bytes.
+
+**What a helper says it can do, and what it is then given.** `hello` carries
+`features`, words for what this helper can do beyond running a named preset
+(`machine.helper_features`):
+
+| Word | Meaning | What the relay then does |
+| --- | --- | --- |
+| `custom_presets` | the engine takes a preset as a definition | may hand it a job with `preset_name` and `preset_spec` |
+| `resign_errors` | the engine can judge accepted resignations | may hand it a job with `resign_errors: true` |
+| `machine_settings` | the helper applies its computer's settings | the settings page offers them for this computer |
+| `battery`, `idle` | this computer can tell either | the page offers the settings that need them |
+
+A job needing a word goes only to a helper that sent it, so an old helper
+beside a new one takes the jobs it can run and leaves the rest. Both optional
+handout fields are absent when not needed, so an old helper sees the handout it
+always did.
+
+**This computer's settings** come back on `hello` and on every `next-job`
+answer, empty or not, as `settings` (`gvhelper/machine.py` says what each
+means). On the poll, so a change on the settings page reaches a running helper
+within one wait. A helper that rests by them — on battery, outside its hours —
+signs off with `/worker/offline` as Pause does, and says hello now and then to
+hear them change.
+
+**`available`** in `hello` is false from a helper that is running but not
+taking work: paused, or resting. The relay then leaves the machine offline
+where a hello used to clear it — which mattered, because the OpenGammon sync
+thread says hello every five minutes whether or not the loop is paused.
 
 ## What this client does not use
 
@@ -114,3 +142,12 @@ lease without making the machine available again.
 
 A revision-3 client against a revision-2 relay gets a 404 from that route and
 treats it as success: going quiet is what pausing did before the route existed.
+
+**4** — 2026-10-21, for the settings page. `hello` gains `features` and
+`available`; its answer and every `next-job` answer gain `settings`; a job may
+carry `preset_name` and `preset_spec` (one of the account's own presets) and
+`resign_errors`, but only to a helper whose `features` say it can run them.
+Every addition is optional in both directions. A revision-3 helper sends
+neither field, is never given a job needing a feature, and ignores `settings`;
+a revision-4 helper against a revision-3 relay hears no settings and runs as an
+unset computer does.

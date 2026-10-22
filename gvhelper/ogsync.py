@@ -369,7 +369,8 @@ class LocalWork:
             return self._item is not None and "taken" not in self._item
 
     def submit(self, mat: str, preset: str | None, label: str,
-               on_wait: Callable[[int | None], None] | None = None) -> bytes:
+               on_wait: Callable[[int | None], None] | None = None, *,
+               spec: dict | None = None, resign_errors: bool = False) -> bytes:
         """Wait for the work loop to analyse `mat`. Raises on failure, or
         `InterruptedError` if the helper is quitting.
 
@@ -377,7 +378,8 @@ class LocalWork:
         analysis has got, in percent (None before it has started), and never
         with the lock held: it makes a request.
         """
-        item = {"mat": mat, "preset": preset, "label": label}
+        item = {"mat": mat, "preset": preset, "label": label, "spec": spec,
+                "resign_errors": resign_errors}
 
         def over() -> bool:
             return "result" in item or "error" in item or self._closed
@@ -434,17 +436,21 @@ class Syncer:
 
     `hello` returns the site's `hello` answer; the setting is its `og_sync`.
     `presets` is what this computer's engine accepts, for checking the
-    player's sync preset against.
+    player's sync preset against, and `features` what else it can do
+    (`runner.engine_features`): one of the account's own presets needs
+    `custom_presets`, and judging resignations `resign_errors`.
     """
 
     def __init__(self, client: WorkerClient, hello: Callable[[], dict], *,
                  presets: Callable[[], list[str]] = lambda: [],
+                 features: Callable[[], list[str]] = lambda: [],
                  og: OpenGammon | None = None, allowance: Allowance | None = None,
                  work: LocalWork | None = None, control=None,
                  now: Callable[[], float] = time.time):
         self.client = client
         self.hello = hello
         self.presets = presets
+        self.features = features
         self.allowance = allowance or Allowance(now=now)
         self.og = og or OpenGammon(self.allowance)
         self.work = work or LocalWork()
@@ -501,9 +507,33 @@ class Syncer:
         wanted = (self.state or {}).get("preset")
         if wanted and wanted in self.presets():
             return wanted
+        if self.spec() is not None:
+            return self.state["preset_name"]
         if wanted:
             _log(f"preset {wanted!r} is not available here; using the engine's default")
         return None
+
+    def spec(self) -> dict | None:
+        """The definition of the account's own sync preset, when the site sent
+        one and this computer's engine can run it; else None.
+
+        The site sends it with the setting (`ogsync.hello_state`), read on each
+        `hello`, so a synced match runs the preset as it stands when the match
+        is fetched. Without one -- a preset deleted since, or an engine too
+        old -- `preset` falls back to the engine's default.
+        """
+        state = self.state or {}
+        spec, name = state.get("preset_spec"), state.get("preset_name")
+        if isinstance(spec, dict) and isinstance(name, str) and "custom_presets" in self.features():
+            return spec
+        return None
+
+    def resign_errors(self) -> bool:
+        """Whether to judge accepted resignations: the account's option, when
+        this computer's engine can. One that cannot analyses without, and the
+        label says so."""
+        asked = (self.state or {}).get("resign_errors") is True
+        return asked and "resign_errors" in self.features()
 
     def _moved(self, state: dict | None) -> None:
         if state is not None:
@@ -596,7 +626,8 @@ class Syncer:
                 self.client.og_skip(sync_id, entry.id, entry.create_time)
                 return "skipped"
             try:
-                gvab = self.work.submit(mat, self.preset(), entry.id, on_wait=self._analysing)
+                gvab = self.work.submit(mat, self.preset(), entry.id, on_wait=self._analysing,
+                                        spec=self.spec(), resign_errors=self.resign_errors())
             except InterruptedError:
                 raise
             except Exception as e:  # noqa: BLE001 - one bad match must not stop the sync
