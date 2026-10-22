@@ -204,3 +204,9 @@ def test_the_restart_imports_nothing_from_the_new_install(tmp_path, monkeypatch)
             update.restart_login_item(run)
     finally:
         sys.meta_path.remove(blocker)
+
+
+def test_the_label_is_the_same_in_both_places():
+    from gvhelper import tray
+
+    assert tray.LAUNCHD_LABEL == update.LAUNCHD_LABEL
