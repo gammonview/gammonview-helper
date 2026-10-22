@@ -24,6 +24,7 @@ lease expires, which is minutes of a person watching nothing happen.
 
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -153,17 +154,20 @@ class Control:
     def stopping(self) -> bool:
         return self._stopping
 
+    # The file is answered before the state changes, so anything that sees
+    # the new state also finds the answer: the terminal command waiting on it,
+    # and the tests.
     def pause(self) -> None:
+        self._mark(PAUSED)
         with self._cond:
             self._paused = True
             self._cond.notify_all()
-        self._mark(PAUSED)
 
     def resume(self) -> None:
+        self._mark(None)
         with self._cond:
             self._paused = False
             self._cond.notify_all()
-        self._mark(None)
 
     def _mark(self, content: str | None) -> None:
         """Mirror the state into the flag file, which is also the answer to
@@ -175,7 +179,11 @@ class Control:
             if content is None:
                 self._flag.unlink(missing_ok=True)
             else:
-                self._flag.write_text(content)
+                # Replaced whole rather than rewritten, which would leave it
+                # empty for a moment for the terminal to read as no answer.
+                part = self._flag.with_name(self._flag.name + ".part")
+                part.write_text(content)
+                os.replace(part, self._flag)
         except OSError:
             pass
 
