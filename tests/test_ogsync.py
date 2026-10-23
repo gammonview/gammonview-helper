@@ -622,6 +622,32 @@ def test_a_press_heard_mid_history_goes_first(allowance, monkeypatch):
     assert account.state["backfill_before"] == NOW
 
 
+def test_a_match_still_waiting_its_turn_hears_no_press(allowance, monkeypatch):
+    """A paused computer must leave a press to one that can act on it.
+
+    Saying how far it has got is also what claims a press, so a sync waiting
+    on a work loop that has not started its match -- paused, outside its hours,
+    busy with an upload -- would claim it and say "Finishing an earlier match…"
+    for as long as it stays stuck.
+    """
+    import threading
+
+    monkeypatch.setattr(ogsync, "TELL_UNWATCHED", 0.0)
+    monkeypatch.setattr(ogsync, "WAIT_TICK", 0.05)
+    work = LocalWork()
+    account = FakeAccount(analysis="local", floor=0, before=NOW)
+    account.press_on = "busy"
+    og = FakeOg([m("old1", NOW - 400 * DAY)], allowance)
+    s = syncer(account, og, allowance, work=work)
+    t = threading.Thread(target=s.history_step, daemon=True)
+    t.start()
+    time.sleep(0.5)
+    assert account.__dict__.get("told", []) == []
+    assert not s.check_asked
+    work.close()
+    t.join(5)
+
+
 def test_a_site_without_progress_is_not_asked_again(allowance):
     account = FakeAccount()
     calls = []

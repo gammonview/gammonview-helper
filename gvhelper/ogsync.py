@@ -432,8 +432,16 @@ class LocalWork:
         `InterruptedError` if the helper is quitting.
 
         `on_wait` is called about once a second meanwhile with how far the
-        analysis has got, in percent (None before it has started), and never
+        analysis has got, in percent (None before it has a count), and never
         with the lock held: it makes a request.
+
+        Only once the work loop has taken the match, though. Until then this
+        computer is not analysing anything -- it may be paused, outside its
+        hours, or busy with a match uploaded by hand -- and `on_wait`'s request
+        is also the one that hears a "Check now" press. Heard here, the press
+        would be claimed by a computer that cannot act on it, and the button
+        would say "Finishing an earlier match…" for as long as it stays stuck,
+        while another of the player's computers sat idle.
         """
         item = {"mat": mat, "preset": preset, "label": label, "spec": spec,
                 "resign_errors": resign_errors}
@@ -451,7 +459,7 @@ class LocalWork:
                 if self._cond.wait_for(over, timeout=WAIT_TICK):
                     self._item = None
                     break
-            if on_wait is not None:
+            if on_wait is not None and "taken" in item:
                 on_wait(_percent(item.get("progress")))
         if "result" in item:
             return item["result"]
