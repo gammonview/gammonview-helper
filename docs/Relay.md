@@ -120,6 +120,15 @@ changes; it updates the way any helper does. A helper from 0.12.2 shows it in
 its menu (`update.held`). Added within revision 4: an older helper ignores the
 key and simply gets no work.
 
+**451** is the site, not the relay: nginx answers it to every `/accounts/` route
+for a computer in a region accounts and analysis are not offered in (the
+site's `docs/RegionRestriction.md`), with a `detail` sentence saying so. The
+helper treats it as neither weather nor unlinking: it logs the sentence once,
+shows "Not available in your region" in its menu, and asks again hourly
+(`daemon.REGION_RETRY`), since the answer changes only when the computer is
+somewhere else. Pairing from such a region fails with the same sentence.
+An older helper counts it as weather and retries every minute.
+
 **`available`** in `hello` is false from a helper that is running but not
 taking work: paused, or resting. The relay then leaves the machine offline
 where a hello used to clear it — which mattered, because the OpenGammon sync

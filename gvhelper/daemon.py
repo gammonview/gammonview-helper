@@ -93,6 +93,14 @@ REST_INTERVAL = 30.0
 #: otherwise only hear on a poll it is not making.
 REST_HELLO_INTERVAL = 60.0
 
+#: How often a helper the site refuses for its region (HTTP 451: accounts and
+#: analysis are not offered in sanctioned regions -- the site's
+#: docs/RegionRestriction.md) asks again. Not a retry against weather: the
+#: answer changes only when the computer is somewhere else, so an hour, and
+#: without the log line repeating.
+REGION_STATUS = 451
+REGION_RETRY = 3600.0
+
 
 def read_flag(path: Path | None) -> str | None:
     """What `PAUSE_FILE` says, or None when there is nothing in it to read."""
@@ -134,6 +142,7 @@ class Control:
         self._stopping = False
         self._flag = flag
         #: "starting" | "unlinked" | "idle" | "busy" | "paused" | "retrying"
+        #: | "unavailable" (refused for its region; see `REGION_RETRY`)
         self.state = "starting"
         #: The running job's counters, or None between jobs.
         self.progress: Progress | None = None
@@ -541,6 +550,9 @@ def serve(
     delay = RETRY_MIN
     signed_off = False
     next_hello = 0.0
+    #: Whether the last poll was refused for this computer's region, so the
+    #: hourly re-ask logs once rather than every hour.
+    refused = False
     try:
         while True:
             if control is not None:
@@ -613,6 +625,9 @@ def serve(
                     settings, idle=power.idle_seconds() if settings.sync_when_idle else None)
                 job = client.next_job(wait=0 if waiting and not held else POLL_WAIT)
                 delay = RETRY_MIN
+                if refused:
+                    refused = False
+                    _log("the site is answering this computer again")
                 # A poll may have brought new settings; the match runs by them.
                 settings = current.get()
                 if job is None and work is not None and not held:
@@ -641,6 +656,17 @@ def serve(
                 _log("Run `gammonview-helper link` to link this computer again.")
                 return 2
             except RelayError as e:
+                if e.status == REGION_STATUS:
+                    if not refused:
+                        _log(f"{e} -- asking again in an hour")
+                    refused = True
+                    if once:
+                        return 1
+                    if control is not None:
+                        control.state = "unavailable"
+                    delay = RETRY_MIN
+                    _sleep(control, REGION_RETRY)
+                    continue
                 # The status is part of the message because of what the first
                 # real failure looked like: "Could not ask for work." repeated
                 # every few minutes, with nothing to say whether that was the

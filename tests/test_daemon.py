@@ -492,3 +492,48 @@ def test_on_battery_with_that_off_the_helper_signs_off_and_rests(cfg, monkeypatc
     assert control.resting is None
     control.stop()
     t.join(3)
+
+
+REGION_DETAIL = ("Accounts and analysis services aren't available in your region. "
+                 "The match viewer works as usual.")
+
+
+@respx.mock
+def test_a_region_refusal_is_reported_in_the_sites_words(cfg, capsys):
+    """The site answers 451 to a computer in a sanctioned region. That is not
+    weather: say the site's sentence, once, rather than "retrying in 2s"."""
+    respx.post(f"{RELAY}/worker/hello").mock(return_value=httpx.Response(451, json={"detail": REGION_DETAIL}))
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(451, json={"detail": REGION_DETAIL}))
+    assert daemon.serve(cfg, "tok", once=True) == 1
+    out = capsys.readouterr()
+    log = out.out + out.err
+    assert "asking again in an hour" in log
+    assert "retrying in" not in log
+
+
+@respx.mock
+def test_a_region_refusal_waits_an_hour_and_says_why(cfg, monkeypatch):
+    """The answer only changes when the computer is somewhere else, so the menu
+    says why and the loop asks hourly, not on the weather backoff."""
+    respx.post(f"{RELAY}/worker/hello").mock(return_value=httpx.Response(451, json={"detail": REGION_DETAIL}))
+    poll = respx.get(f"{RELAY}/worker/next-job").mock(
+        return_value=httpx.Response(451, json={"detail": REGION_DETAIL}))
+    slept = []
+    control = daemon.Control()
+    real_sleep = control.sleep
+    monkeypatch.setattr(control, "sleep", lambda s: (slept.append(s), real_sleep(0.01)))
+    t = threading.Thread(target=daemon.serve, args=(cfg, "tok"), kwargs={"control": control}, daemon=True)
+    t.start()
+    for _ in range(200):
+        if control.state == "unavailable" and daemon.REGION_RETRY in slept:
+            break
+        threading.Event().wait(0.01)
+    state = control.state
+    control.stop()
+    t.join(2)
+    assert not t.is_alive()
+    assert poll.call_count >= 1
+    assert state == "unavailable"
+    # The sync thread shares `control.sleep`, so its own waits are in `slept`
+    # too; what matters is that the loop's wait was the hour.
+    assert daemon.REGION_RETRY in slept

@@ -136,6 +136,7 @@ def status_line(control: Control, percent: bool = True) -> str:
         "idle": "Ready for matches",
         "busy": f"Analysing a match…{shown}",
         "retrying": "Can't reach GammonView, retrying",
+        "unavailable": "Not available in your region",
     }.get(control.state, "Ready for matches")
 
 

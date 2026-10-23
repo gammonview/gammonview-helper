@@ -26,6 +26,12 @@ def test_the_status_line_follows_the_loop():
     assert tray.status_line(c) == "Analysing a match… 37%"
 
 
+def test_a_helper_refused_for_its_region_says_so():
+    c = Control()
+    c.state = "unavailable"
+    assert tray.status_line(c) == "Not available in your region"
+
+
 def test_a_helper_held_back_says_it_must_update(monkeypatch):
     from gvhelper import update
 
