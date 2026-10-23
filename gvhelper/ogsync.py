@@ -13,7 +13,8 @@ everybody. So the requests come from here, and the site only remembers what was
 found. Nothing in this module needs an OpenGammon login.
 
 **The helper fetches; the browser converts and saves.** A fetched match goes to
-the account's inbox as the `.mat` plus either OpenGammon's analysis record or
+the account's inbox as the `.mat` plus either OpenGammon's analysis -- its OGXM
+file, gzipped like a `.gvab`, or on the older route its analysis record -- or
 the `.gvab` this computer made from the `.mat`. Turning that into a saved match
 is the browser's existing import path.
 
@@ -32,6 +33,7 @@ a 429 stops all of them until its `retry_after` has passed.
 
 from __future__ import annotations
 
+import gzip
 import json
 import re
 import threading
@@ -215,7 +217,7 @@ class Entry:
 
 
 class OpenGammon:
-    """The three requests the sync makes, spaced and counted."""
+    """The requests the sync makes, spaced and counted."""
 
     def __init__(self, allowance: Allowance, client: httpx.Client | None = None,
                  base: str = OG_API, sleep: Callable[[float], None] = time.sleep):
@@ -230,7 +232,8 @@ class OpenGammon:
     def close(self) -> None:
         self._client.close()
 
-    def _get(self, path: str, params: dict | None = None) -> dict:
+    def _request(self, path: str, params: dict | None = None,
+                 headers: dict | None = None) -> httpx.Response:
         blocked = self.allowance.blocked_for()
         if blocked:
             raise OgRateLimited(blocked)
@@ -239,7 +242,7 @@ class OpenGammon:
             self.sleep(wait)
         self._last = time.monotonic()
         try:
-            r = self._client.get(f"{self.base}{path}", params=params)
+            r = self._client.get(f"{self.base}{path}", params=params, headers=headers)
         except httpx.RequestError as e:
             raise OgError(f"could not reach opengammon.com ({type(e).__name__})") from e
         if r.status_code == 429:
@@ -252,6 +255,10 @@ class OpenGammon:
             raise OgRateLimited(retry)
         if r.status_code >= 400:
             raise OgError(f"opengammon.com answered HTTP {r.status_code} for {path}")
+        return r
+
+    def _get(self, path: str, params: dict | None = None) -> dict:
+        r = self._request(path, params)
         try:
             body = r.json()
         except ValueError as e:
@@ -280,8 +287,16 @@ class OpenGammon:
             raise OgError(f"match {match_id} came back without a match file")
         return mat
 
-    def analysis(self, match_id: str) -> dict | None:
-        """The analysis record, or None if it is not finished.
+    def analysis(self, match_id: str) -> dict | bytes | None:
+        """The analysis, or None if it is not finished.
+
+        OpenGammon changed its route in October 2026. Now it names an OGXM v2
+        file (`ogxm_url`) holding the whole match with its analysis, which is
+        fetched and returned **gzipped** -- the form the inbox's `gvab` takes,
+        and the browser reads it as it reads a `.gvab` this computer made. A
+        match analysed before that comes as `format: "legacy"`, its analysis
+        inline; that, like the older route's record, is returned as a dict in
+        the older record's shape.
 
         Counted against the day's allowance whatever the answer, because
         OpenGammon counts it. **Asking for an unanalysed match queues a job on
@@ -290,12 +305,54 @@ class OpenGammon:
         """
         self.allowance.spend_analysis()
         body = self._get(f"/match/{match_id}/analysis/")
+        if "analysis_status" in body:
+            if body.get("analysis_status") != "analysed":
+                return None
+            # Analysed before the move to OGXM: the file holds only the moves,
+            # and the analysis is inline in the older payload's shape. Checked
+            # first, because the file is offered for these too.
+            if body.get("format") == "legacy" or isinstance(body.get("legacy"), dict):
+                payload = body.get("legacy")
+                if not isinstance(payload, dict):
+                    return None
+                return {"status": "analysed", "analysis": payload,
+                        "analysed_time": _unix(body.get("match", {}).get("analysed_time"))}
+            if not body.get("ogxm_url"):
+                return None
+            return self._ogxm(match_id, body["ogxm_url"])
         record = body.get("analysis")
         if not isinstance(record, dict) or record.get("status") != "analysed":
             return None
         if not isinstance(record.get("analysis"), dict):
             return None
         return record
+
+    def _ogxm(self, match_id: str, ogxm_url: str) -> bytes:
+        """The match's OGXM file, gzipped.
+
+        The path is built from the id; only the `v` the response named is
+        carried over, so nothing is fetched just because a response said to.
+        """
+        version = _OGXM_VERSION.search(str(ogxm_url))
+        params = {"v": version.group(1)} if version else None
+        r = self._request(f"/match/{match_id}/ogxm/", params,
+                          {"Accept": "application/octet-stream"})
+        if not r.content.startswith(b"OGXM"):
+            raise OgError(f"match {match_id} came back without an OGXM file")
+        return gzip.compress(r.content)
+
+
+def _unix(iso) -> float | None:
+    """An ISO time as unix seconds, as the older record's `analysed_time` was."""
+    try:
+        at = datetime.fromisoformat(str(iso))
+    except ValueError:
+        return None
+    return (at if at.tzinfo else at.replace(tzinfo=timezone.utc)).timestamp()
+
+
+#: The `v` of an `ogxm_url`, a version that changes when the file does.
+_OGXM_VERSION = re.compile(r"[?&]v=([0-9A-Za-z._-]{1,40})(?:&|$)")
 
 
 def entries(raw: list[dict]) -> list[Entry]:
@@ -618,8 +675,12 @@ class Syncer:
                     return "later"
                 self.client.og_skip(sync_id, entry.id, entry.create_time)
                 return "skipped"
-            depth = self.client.og_take(sync_id, entry.id, entry.create_time, mat,
-                                        analysis=json.dumps(record, separators=(",", ":")))
+            if isinstance(record, bytes):
+                depth = self.client.og_take(sync_id, entry.id, entry.create_time, mat,
+                                            gvab=record)
+            else:
+                depth = self.client.og_take(sync_id, entry.id, entry.create_time, mat,
+                                            analysis=json.dumps(record, separators=(",", ":")))
         else:
             mat = self.og.mat(entry.id)
             if not has_play(mat):

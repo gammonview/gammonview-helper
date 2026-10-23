@@ -16,6 +16,7 @@ What these hold the sync to:
 
 from __future__ import annotations
 
+import gzip
 import json
 import time
 
@@ -59,6 +60,8 @@ class FakeOg:
         self.analysed.append(match_id)
         entry = next(x for x in self.all if x["match_id"] == match_id)
         assert entry["analysis_ply"] > 0, "would have queued a job on OpenGammon"
+        if entry.get("ogxm"):
+            return gzip.compress(b"OGXM" + match_id.encode())
         return {"status": "analysed", "analysis": {"games": []}, "analysed_time": 1.0}
 
     def close(self):
@@ -151,6 +154,14 @@ def test_new_matches_are_taken_and_the_cursor_settles_behind_them(allowance):
     assert account.state["settled_before"] == NOW - DAY
     s.check()
     assert og.analysed == ["a", "b"], "a second check must not fetch anything again"
+
+
+def test_an_ogxm_analysis_goes_to_the_inbox_as_a_gvab(allowance):
+    account = FakeAccount()
+    og = FakeOg([{**m("a", NOW - 3600), "ogxm": True}], allowance)
+    syncer(account, og, allowance).check()
+    assert account.inbox["a"]["analysis"] is None
+    assert gzip.decompress(account.inbox["a"]["gvab"]) == b"OGXMa"
 
 
 def test_a_recent_unanalysed_match_holds_the_cursor_and_is_never_asked_for(allowance):
@@ -409,6 +420,68 @@ def test_an_unfinished_analysis_reads_as_not_ready(allowance):
         return_value=httpx.Response(200, json={"analysis": {"status": "created"}}))
     assert OpenGammon(allowance, sleep=lambda s: None).analysis("q") is None
     assert allowance.analyses_left() == ogsync.DAILY_ANALYSES - 1
+
+
+OGXM_BODY = {"status": "success", "format": "ogxm", "analysis_status": "analysed",
+             "analysis_error": None, "ogxm_url": "/app/match/q/ogxm/?v=2.17",
+             "match": {"match_id": "q", "analysis": None}}
+
+
+@respx.mock
+def test_an_ogxm_analysis_is_fetched_and_gzipped(allowance):
+    respx.get("https://opengammon.com/app/match/q/analysis/").mock(
+        return_value=httpx.Response(200, json=OGXM_BODY))
+    file = respx.get("https://opengammon.com/app/match/q/ogxm/").mock(
+        return_value=httpx.Response(200, content=b"OGXM\x02\x00rest"))
+    out = OpenGammon(allowance, sleep=lambda s: None).analysis("q")
+    assert gzip.decompress(out) == b"OGXM\x02\x00rest"
+    assert file.calls.last.request.url.params["v"] == "2.17"
+    assert allowance.analyses_left() == ogsync.DAILY_ANALYSES - 1
+
+
+@respx.mock
+def test_a_match_analysed_before_the_move_is_taken_from_its_inline_analysis(allowance):
+    file = respx.get("https://opengammon.com/app/match/q/ogxm/").mock(
+        return_value=httpx.Response(200, content=b"OGXM"))
+    respx.get("https://opengammon.com/app/match/q/analysis/").mock(
+        return_value=httpx.Response(200, json={
+            **OGXM_BODY, "format": "legacy", "analysis_blocks": 0,
+            "legacy": {"config": "2ply", "games": []},
+            "match": {"analysed_time": "2026-09-06T19:05:18.5"}}))
+    out = OpenGammon(allowance, sleep=lambda s: None).analysis("q")
+    assert out["status"] == "analysed"
+    assert out["analysis"] == {"config": "2ply", "games": []}
+    assert out["analysed_time"] == pytest.approx(1788721518.5)
+    assert file.call_count == 0
+
+
+@respx.mock
+def test_the_ogxm_path_is_built_from_the_id_not_the_response(allowance):
+    respx.get("https://opengammon.com/app/match/q/analysis/").mock(
+        return_value=httpx.Response(200, json={**OGXM_BODY, "ogxm_url": "/app/admin/?v=3"}))
+    file = respx.get("https://opengammon.com/app/match/q/ogxm/").mock(
+        return_value=httpx.Response(200, content=b"OGXM"))
+    OpenGammon(allowance, sleep=lambda s: None).analysis("q")
+    assert file.call_count == 1
+
+
+@respx.mock
+def test_an_unfinished_ogxm_analysis_reads_as_not_ready(allowance):
+    route = respx.get("https://opengammon.com/app/match/q/analysis/").mock(
+        return_value=httpx.Response(200, json={**OGXM_BODY, "analysis_status": "queued",
+                                               "ogxm_url": None}))
+    assert OpenGammon(allowance, sleep=lambda s: None).analysis("q") is None
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_a_file_that_is_not_ogxm_is_an_error(allowance):
+    respx.get("https://opengammon.com/app/match/q/analysis/").mock(
+        return_value=httpx.Response(200, json=OGXM_BODY))
+    respx.get("https://opengammon.com/app/match/q/ogxm/").mock(
+        return_value=httpx.Response(200, content=b"<!DOCTYPE html>"))
+    with pytest.raises(ogsync.OgError):
+        OpenGammon(allowance, sleep=lambda s: None).analysis("q")
 
 
 # --- the analysis window -----------------------------------------------------------
