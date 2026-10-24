@@ -6,11 +6,16 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from gvhelper import shellcmd
+
+# The menu offers it on macOS only; Windows has neither the symlink nor the PATH
+# this is about.
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="macOS menu only")
 
 
 @pytest.fixture
