@@ -201,7 +201,18 @@ rm -rf ~/Library/"Application Support"/GammonView
 Order matters: `unlink` spends the credential that the last line deletes.
 
 Installed with the macOS installer app instead? Open it again and press
-**Uninstall** — it does all four, in that order.
+**Uninstall** — it does all four, in that order. If you added the terminal
+command from the menu, choose **Remove Terminal Command…** first, or delete
+`~/.local/bin/gammonview-helper` afterwards; the installer leaves it behind.
+
+### The terminal command, for an installer install
+
+The installer keeps the `gammonview-helper` command inside its own folder and
+off your PATH. To use it from a terminal too, choose **Add Terminal Command…**
+in the menu: it links `~/.local/bin/gammonview-helper` to it, and says what to
+add to your shell profile if `~/.local/bin` is not on your PATH. It never
+replaces a `gammonview-helper` that is already there, such as a `uv tool`
+install of your own. Run only one of them as the helper.
 
 On Windows, use **Uninstall** in Settings > Apps. On Linux,
 `gammonview-helper uninstall` unlinks, stops the helper, removes what `install`

@@ -40,6 +40,7 @@ import threading
 import time
 import webbrowser
 from importlib.resources import files
+from pathlib import Path
 from typing import Callable
 
 from . import __version__, update
@@ -205,7 +206,7 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
     import rumps
     from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
 
-    from . import macapp, update
+    from . import macapp, shellcmd, update
     from .cli import pair, unlink
 
     if under_login_item():
@@ -250,13 +251,17 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
             self.open_site = rumps.MenuItem("Open GammonView", callback=self.on_open)
             self.link = rumps.MenuItem("Link This Computer…", callback=self.on_link)
             self.update = rumps.MenuItem("Update…", callback=self.on_update)
+            self.terminal = rumps.MenuItem("Add Terminal Command…", callback=self.on_terminal)
             self.about = rumps.MenuItem("About GammonView Helper", callback=self.on_about)
             self.quit = rumps.MenuItem("Quit GammonView Helper", callback=self.on_quit)
             self.menu = [
                 self.status, self.account, self.og, None,
                 self.toggle, self.open_site, self.link, None,
-                self.update, self.about, self.quit,
+                self.update, self.terminal, self.about, self.quit,
             ]
+            # Only for the installer's own install: a `uv tool` one has the
+            # command already (`shellcmd.py`).
+            self._command = shellcmd.source(os.path.abspath(sys.argv[0]))
             self._linking = False
             self._updating = False
             self._release: dict | None = None
@@ -305,6 +310,7 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
                 # browser would wait out the lease on a job nobody is running.
                 self.link.set_callback(None if control.state == "busy" else self.on_unlink)
             self._draw_update()
+            self._draw_terminal()
             # A percentage beside the icon while analysing, and nothing
             # otherwise: the icon alone should be the quiet state.
             progress = control.progress
@@ -537,6 +543,79 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
             # Still here: the kickstart did not take. The new version is
             # installed, so leaving is enough -- launchd's KeepAlive starts it.
             events.put(("exit",))
+
+        # --- Terminal command -----------------------------------------------
+
+        def _draw_terminal(self) -> None:
+            src = self._command
+            self.terminal.hidden = src is None
+            if src is not None:
+                ours = shellcmd.state(src) == "ours"
+                self.terminal.title = (
+                    "Remove Terminal Command…" if ours else "Add Terminal Command…"
+                )
+
+        def on_terminal(self, _sender) -> None:
+            src = self._command
+            if src is None:
+                return
+            bring_forward()
+            link = shellcmd.link_path()
+            shown = str(link).replace(str(Path.home()), "~", 1)
+            if shellcmd.state(src) == "ours":
+                confirmed = rumps.alert(
+                    title="Remove the terminal command?",
+                    message=(
+                        f"{shown} will be removed. The helper itself keeps "
+                        "running; only the command goes."
+                    ),
+                    ok="Remove",
+                    cancel="Cancel",
+                )
+                if confirmed == 1:
+                    shellcmd.remove(src)
+                self.refresh()
+                return
+            confirmed = rumps.alert(
+                title="Add a terminal command?",
+                message=(
+                    "For using the helper from a terminal as well as from this "
+                    f"menu. It puts a link to it at {shown}, and changes "
+                    "nothing else. You can remove it from this menu."
+                ),
+                ok="Add",
+                cancel="Cancel",
+            )
+            if confirmed != 1:
+                return
+            problem = shellcmd.add(src)
+            self.refresh()
+            if problem is not None:
+                rumps.alert(title="The terminal command was not added", message=problem)
+                return
+            if shellcmd.on_path(shellcmd.shell_path()) is True:
+                rumps.alert(
+                    title="The terminal command is added",
+                    message="Open a new terminal window and type gammonview-helper.",
+                )
+                return
+            line = shellcmd.path_line()
+            answer = rumps.alert(
+                title="The terminal command is added",
+                message=(
+                    f"{shown.rsplit('/', 1)[0]} does not seem to be on your PATH yet. "
+                    "To put it there, run this once in a terminal, then open a "
+                    f"new window:\n\n{line}"
+                ),
+                ok="Copy Line",
+                cancel="Done",
+            )
+            if answer == 1:
+                from AppKit import NSPasteboard, NSPasteboardTypeString
+
+                board = NSPasteboard.generalPasteboard()
+                board.clearContents()
+                board.setString_forType_(line, NSPasteboardTypeString)
 
         # --- Quit ------------------------------------------------------------
 

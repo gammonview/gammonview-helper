@@ -85,7 +85,10 @@ nothing yet to reject.
 
 Everything under `~/Library/Application Support/GammonView/` — `uv`, a private
 CPython, the venv, the cache — plus one login item. Never the user's PATH,
-never their `uv`, never their Python. Uninstall:
+never their `uv`, never their Python. (The helper's menu offers to link the
+command into `~/.local/bin`, when asked; see `gvhelper/shellcmd.py`. That link
+is the one thing outside the folder, and the launcher's Uninstall does not know
+about it.) Uninstall:
 
 ```sh
 launchctl bootout gui/$(id -u)/com.gammonview.helper
