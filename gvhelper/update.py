@@ -245,25 +245,55 @@ def target(
     return Target(uv, env, f"{sys.version_info.major}.{sys.version_info.minor}")
 
 
+#: How long `install` keeps asking for a release PyPI's index does not list
+#: yet, and how often. See `install`.
+NOT_LISTED_TRIES = 10
+NOT_LISTED_WAIT = 60.0
+
+#: What the person is told when the release still is not listed after that.
+NOT_LISTED = (
+    "This update is not available to download yet. Try again in a few minutes."
+)
+
+
+def _not_listed(stderr: str, version: str) -> bool:
+    """Whether uv failed because the index does not list `version` at all."""
+    return f"there is no version of gammonview-helper=={version}" in stderr
+
+
 def install(
     where: Target,
     release: dict,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> str | None:
-    """Install `release` over this helper. None, or what went wrong."""
-    # `--refresh-package`: the site names a version only once PyPI has it,
-    # but uv answers from its cached index for up to ten minutes, and in that
-    # window `==` the new version was "unsatisfiable" (0.12.1, 2026-10-22).
+    """Install `release` over this helper. None, or what went wrong.
+
+    **A release can be on PyPI and still not be listed.** `--refresh-package`
+    makes uv ask again rather than answer from its own cache -- that was the
+    0.12.1 window, 2026-10-22 -- but PyPI's CDN serves the index with
+    `max-age=600`, so for up to ten minutes after an upload the answer to
+    asking again can still be the old list, and uv calls the version
+    "unsatisfiable". The site can name a release inside that window (0.13.1,
+    2026-10-24: the deploy went out a minute after the upload, and the Studio's
+    menu said "unsatisfiable."). So that one failure is retried for as long as
+    the CDN can be behind, and reported in words if it outlasts that.
+    """
     argv = [where.uv, "tool", "install", "--force", "--refresh-package", "gammonview-helper"]
     python = release.get("python") if where.python == "release" else where.python
     if isinstance(python, str) and python:
         argv += ["--python", python]
     argv.append(f"gammonview-helper=={release['version']}")
-    done = run(argv, env=where.env, capture_output=True, text=True)
-    if done.returncode == 0:
-        return None
-    lines = [line for line in (done.stderr or "").splitlines() if line.strip()]
-    return lines[-1] if lines else f"uv exited with status {done.returncode}"
+    for attempt in range(NOT_LISTED_TRIES):
+        if attempt:
+            sleep(NOT_LISTED_WAIT)
+        done = run(argv, env=where.env, capture_output=True, text=True)
+        if done.returncode == 0:
+            return None
+        if not _not_listed(done.stderr or "", release["version"]):
+            lines = [line for line in (done.stderr or "").splitlines() if line.strip()]
+            return lines[-1] if lines else f"uv exited with status {done.returncode}"
+    return NOT_LISTED
 
 
 def restart_login_item(

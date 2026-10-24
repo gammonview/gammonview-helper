@@ -95,6 +95,54 @@ def test_a_failed_install_says_uvs_last_word(tmp_path):
     assert update.install(where, {"version": "0.5.0"}, run) == "error: no network"
 
 
+UNLISTED = (
+    "error: No solution found when resolving dependencies\n"
+    "  cause: Because there is no version of gammonview-helper==0.5.0 and you require "
+    "gammonview-helper==0.5.0, we can conclude that your requirements are unsatisfiable.\n"
+)
+
+
+def test_a_release_the_index_does_not_list_yet_is_asked_for_again(tmp_path):
+    # PyPI's CDN can serve the old list for ten minutes after an upload.
+    root = installer_layout(tmp_path)
+    answers = [UNLISTED, UNLISTED, ""]
+    waits = []
+
+    def run(argv, **kw):
+        stderr = answers.pop(0)
+        return subprocess.CompletedProcess(argv, 1 if stderr else 0, "", stderr)
+
+    where = update.target(str(root / "bin" / "gammonview-helper"))
+    assert update.install(where, {"version": "0.5.0"}, run, waits.append) is None
+    assert waits == [update.NOT_LISTED_WAIT] * 2
+
+
+def test_one_still_not_listed_is_said_in_words(tmp_path):
+    root = installer_layout(tmp_path)
+    calls = []
+
+    def run(argv, **kw):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 1, "", UNLISTED)
+
+    where = update.target(str(root / "bin" / "gammonview-helper"))
+    assert update.install(where, {"version": "0.5.0"}, run, lambda _: None) == update.NOT_LISTED
+    assert len(calls) == update.NOT_LISTED_TRIES
+
+
+def test_any_other_failure_is_not_retried(tmp_path):
+    root = installer_layout(tmp_path)
+    calls = []
+
+    def run(argv, **kw):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 1, "", "error: no network\n")
+
+    where = update.target(str(root / "bin" / "gammonview-helper"))
+    update.install(where, {"version": "0.5.0"}, run, lambda _: None)
+    assert len(calls) == 1
+
+
 def uv_tool_layout(tmp_path):
     """What `uv tool install` leaves: a venv with a receipt, and an entry point."""
     tool = tmp_path / "share" / "uv" / "tools" / "gammonview-helper"
