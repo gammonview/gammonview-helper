@@ -83,8 +83,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://gammonview.com"
-Repository = "https://github.com/ngvlamis/gammonview-helper"
-Issues = "https://github.com/ngvlamis/gammonview-helper/issues"
+Repository = "https://github.com/gammonview/gammonview-helper"
+Issues = "https://github.com/gammonview/gammonview-helper/issues"
 
 [project.scripts]
 gammonview-helper = "gvhelper.cli:main"

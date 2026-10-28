@@ -24,7 +24,7 @@
     <!-- No document types, no URL schemes, no services, no background modes.
          It opens a window, installs one package, and quits. -->
     <key>NSHumanReadableCopyright</key>
-    <string>MIT licensed. Source: github.com/ngvlamis/gammonview-helper</string>
+    <string>MIT licensed. Source: github.com/gammonview/gammonview-helper</string>
     <!-- The helper it installs polls gammonview.com over HTTPS; this app
          itself only fetches one JSON file. No ATS exception is needed and
          none is granted. -->

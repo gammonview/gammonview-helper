@@ -41,11 +41,11 @@ Two other forms, for whoever prefers them:
 # the exact wheel from a release, no index involved. Pinned by definition:
 # re-run it with a newer version to upgrade, since `uv tool upgrade` has
 # nothing to ask about a package installed from a URL
-uv tool install https://github.com/ngvlamis/gammonview-helper/releases/download/v0.1.1/gammonview_helper-0.1.1-py3-none-any.whl
+uv tool install https://github.com/gammonview/gammonview-helper/releases/download/v0.1.1/gammonview_helper-0.1.1-py3-none-any.whl
 
 # straight from a tag — needs `git`, and builds from source rather than
 # installing the wheel that was tested
-uv tool install git+https://github.com/ngvlamis/gammonview-helper@v0.1.1
+uv tool install git+https://github.com/gammonview/gammonview-helper@v0.1.1
 ```
 
 ## Link this computer

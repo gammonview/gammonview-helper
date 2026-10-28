@@ -34,7 +34,7 @@
     <Product>GammonView Helper</Product>
     <AssemblyTitle>GammonView Installer</AssemblyTitle>
     <Company>GammonView</Company>
-    <Copyright>MIT licensed. Source: github.com/ngvlamis/gammonview-helper</Copyright>
+    <Copyright>MIT licensed. Source: github.com/gammonview/gammonview-helper</Copyright>
 
     <!-- `uv.zip` is fetched and verified by build.sh; it is not in git. -->
     <UvZip Condition="'$(UvZip)' == ''">build\uv.zip</UvZip>
