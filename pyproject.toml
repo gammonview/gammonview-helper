@@ -61,7 +61,9 @@ classifiers = [
 # resignations, which custom presets and the resign-errors option need (3.0.0
 # merged a match with a resignation wrongly). 3.1.0 records its own version in
 # each analysis's `engine_build`, so a file says which side of a fix like that
-# one it was made on -- what the manifest's `minimum` is for.
+# one it was made on -- what the manifest's `minimum` is for. 3.3.0 analyses a
+# money session under the Jacoby and beaver rules it was played under; before
+# it, every one was judged with both on.
 #
 # On Windows, `bgsage` is pinned exactly and `msvc-runtime` comes with it: the
 # engine's extension crashes against a C++ runtime older than the compiler it
@@ -70,7 +72,7 @@ classifiers = [
 # may move to a newer compiler -- so moving it means running an analysis on a
 # Windows machine with an old runtime first.
 dependencies = [
-    "gammonview[engine]>=3.1.0",
+    "gammonview[engine]>=3.3.0",
     "httpx>=0.27",
     "keyring>=25.0",
     "rumps>=0.4; sys_platform == 'darwin'",
