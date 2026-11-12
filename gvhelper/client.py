@@ -468,6 +468,34 @@ class WorkerClient:
             resign_errors=job.get("resign_errors") is True,
         )
 
+    def next_play(self, wait: int = POLL_WAIT) -> dict | None:
+        """Hold a poll open until a bot move is wanted, or `wait` elapses.
+
+        `{"id", "position_id", "level"}`, or None on an empty wait. A site
+        without the route answers 404, which reaches the caller as a
+        `RelayError` with that status, to stop asking.
+        """
+        started = time.monotonic()
+        r = _send(self._client, "GET", f"{self._base}/next-play",
+                  params={"wait": wait}, timeout=POLL_TIMEOUT)
+        if r.status_code in POLL_GATEWAY_STATUSES:
+            slept = time.monotonic() - started
+            if slept < POLL_GATEWAY_FLOOR:
+                time.sleep(POLL_GATEWAY_FLOOR - slept)
+            return None
+        _check(r, "Could not ask for a move.")
+        play = r.json().get("play")
+        return play if isinstance(play, dict) else None
+
+    def answer_play(self, play_id: str, *, result: dict | None = None,
+                    error: str | None = None) -> None:
+        """Hand back a move's analysis, or the engine's reason it has none."""
+        body = {"result": result} if result is not None else {"error": (error or "")[:500]}
+        _check(
+            _send(self._client, "POST", f"{self._base}/plays/{play_id}/answer", json=body),
+            "Could not hand back the move.",
+        )
+
     def progress(self, job_id: str, done: int, total: int) -> None:
         """Report counts, which is also how the claim stays alive.
 

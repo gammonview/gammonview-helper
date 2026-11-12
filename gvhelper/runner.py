@@ -209,6 +209,10 @@ CUSTOM_PRESETS = "custom_presets"
 #: relay gives a job asking for that only to a helper that says this.
 RESIGN_ERRORS = "resign_errors"
 
+#: The feature word for answering single positions: a bot opponent's moves on
+#: the site's play page. The relay offers a play only to a helper saying this.
+PLAYS = "plays"
+
 
 class PresetRefused(ValueError):
     """The engine would not run a custom preset's definition.
@@ -241,7 +245,36 @@ def engine_features() -> list[str]:
             out.append(RESIGN_ERRORS)
     except Exception:  # an engine before the option, or none installed
         pass
+    try:
+        from gvanalysis.position import analyze_position  # noqa: F401
+        out.append(PLAYS)
+    except Exception:  # installed without the engine
+        pass
     return out
+
+
+#: One analyzer per level, built on a level's first play and kept: building one
+#: costs ~40ms, and a match asks the same level a hundred times. Only the plays
+#: thread uses them, so the lock is for the first build, not for the engine.
+_play_analyzers: dict = {}
+_play_lock = threading.Lock()
+
+
+def play(position_id: str, level: str) -> dict:
+    """One position's analysis, for a bot deciding its move.
+
+    The site's own `POST /position` answer, made by the same call
+    (`gvanalysis.analyze_position`), so the page reads it with the code that
+    already reads that endpoint's.
+    """
+    from bgsage import BgBotAnalyzer
+    from gvanalysis.position import analyze_position
+
+    with _play_lock:
+        analyzer = _play_analyzers.get(level)
+        if analyzer is None:
+            analyzer = _play_analyzers[level] = BgBotAnalyzer(eval_level=level, cubeful=True)
+    return analyze_position(position_id, level=level, analyzer=analyzer)
 
 
 def custom(name: str, spec: dict):

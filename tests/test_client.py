@@ -468,3 +468,43 @@ def test_a_named_job_has_no_definition(cfg):
     )
     job = WorkerClient(cfg, "tok").next_job()
     assert job.preset_name is None and job.preset_spec is None
+
+
+# --- plays: a bot's moves for the play page (`relayplay.py`) -----------------
+
+
+@respx.mock
+def test_a_play_is_claimed_and_answered_on_the_relays_routes(cfg):
+    """`next-play` hands over `{id, position_id, level}`; the answer goes back
+    to `plays/{id}/answer` as `{"result": ...}`, the shape the relay reads."""
+    respx.get(f"{RELAY}/worker/next-play").mock(return_value=httpx.Response(
+        200, json={"play": {"id": "p1", "position_id": "x:y:N0N:31:B:R:0:0:5:0", "level": "3ply"}}))
+    answer = respx.post(f"{RELAY}/worker/plays/p1/answer").mock(
+        return_value=httpx.Response(200, json={"ok": True}))
+    client = WorkerClient(cfg, "t")
+    wanted = client.next_play(wait=0)
+    assert wanted == {"id": "p1", "position_id": "x:y:N0N:31:B:R:0:0:5:0", "level": "3ply"}
+    client.answer_play("p1", result={"kind": "cube"})
+    assert json.loads(answer.calls.last.request.read()) == {"result": {"kind": "cube"}}
+
+
+@respx.mock
+def test_an_empty_play_poll_is_none(cfg):
+    respx.get(f"{RELAY}/worker/next-play").mock(return_value=httpx.Response(200, json={"play": None}))
+    assert WorkerClient(cfg, "t").next_play(wait=0) is None
+
+
+@respx.mock
+def test_a_refused_play_says_why(cfg):
+    answer = respx.post(f"{RELAY}/worker/plays/p1/answer").mock(
+        return_value=httpx.Response(200, json={"ok": True}))
+    WorkerClient(cfg, "t").answer_play("p1", error="x" * 900)
+    assert json.loads(answer.calls.last.request.read()) == {"error": "x" * 500}
+
+
+@respx.mock
+def test_a_site_without_plays_is_a_404_the_thread_can_read(cfg):
+    respx.get(f"{RELAY}/worker/next-play").mock(return_value=httpx.Response(404, json={"detail": "Not Found"}))
+    with pytest.raises(RelayError) as e:
+        WorkerClient(cfg, "t").next_play(wait=0)
+    assert e.value.status == 404

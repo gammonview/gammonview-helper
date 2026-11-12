@@ -35,8 +35,8 @@ from .client import POLL_WAIT, Job, RelayError, Unauthorized, WorkerClient
 from .config import Config, machine_name
 from . import machine, power
 from .runner import (
-    PresetRefused, Progress, analyze, available_presets, engine_features, engine_version,
-    lower_priority,
+    PLAYS, PresetRefused, Progress, analyze, available_presets, engine_features,
+    engine_version, lower_priority, play,
 )
 from .ogsync import LocalWork, Syncer
 from .store import load_token
@@ -438,6 +438,71 @@ def start_sync(cfg: Config, token: str, name: str, control: Control | None,
     return syncer, thread
 
 
+#: How long the plays thread waits before asking a site that has no `next-play`
+#: again -- an older site, which will not grow the route in the next minute.
+PLAYS_ABSENT_RETRY = 600.0
+
+
+def start_plays(cfg: Config, token: str, control: Control | None,
+                available) -> threading.Thread | None:
+    """Bot moves for the site's play page, on a thread of their own.
+
+    Their own thread and their own `WorkerClient` because a move is wanted
+    *now*: the work loop may be an hour into a match, and a person playing a
+    bot cannot wait for it. The engine is shared with that match only in the
+    sense of the CPU -- a play builds its own analyzer -- so a move during an
+    analysis is slower, not queued.
+
+    Asks only while the loop is taking work (`available`): a paused or resting
+    helper is one the site must not route to, and asking for a play would tell
+    the site otherwise. None, and no thread, without an engine that can play.
+    """
+    if PLAYS not in engine_features():
+        return None
+    plays_client = WorkerClient(cfg, token)
+
+    def run() -> None:
+        delay = RETRY_MIN
+        try:
+            while not (control is not None and control.stopping):
+                if not available():
+                    _sleep(control, 1.0)
+                    continue
+                try:
+                    wanted = plays_client.next_play()
+                    delay = RETRY_MIN
+                except Unauthorized:
+                    return  # the work loop says so, and stops
+                except RelayError as e:
+                    _sleep(control, PLAYS_ABSENT_RETRY if e.status == 404 else delay)
+                    delay = min(RETRY_MAX, delay * 2)
+                    continue
+                except Exception:  # noqa: BLE001 - weather, as in the work loop
+                    _sleep(control, delay)
+                    delay = min(RETRY_MAX, delay * 2)
+                    continue
+                if wanted is None:
+                    continue
+                try:
+                    result = play(wanted["position_id"], wanted["level"])
+                except Exception as e:  # noqa: BLE001 - the engine's sentence, to the page
+                    try:
+                        plays_client.answer_play(wanted["id"], error=str(e) or type(e).__name__)
+                    except Exception:  # noqa: BLE001 - the relay fails it in time anyway
+                        pass
+                    continue
+                try:
+                    plays_client.answer_play(wanted["id"], result=result)
+                except Exception as e:  # noqa: BLE001
+                    _log(f"could not hand back a move: {e}")
+        finally:
+            plays_client.close()
+
+    thread = threading.Thread(target=run, name="plays", daemon=True)
+    thread.start()
+    return thread
+
+
 #: How often an unlinked helper looks in the credential store.
 #:
 #: The number exists because pairing and polling are two processes. `link`
@@ -545,6 +610,8 @@ def serve(
     # Not under `once`, which is one poll-and-work cycle for the tests and has
     # nothing for a background thread to do.
     syncer = None if once else start_sync(cfg, token, name, control, current, available)[0]
+    if not once:
+        start_plays(cfg, token, control, available)
     work = syncer.work if syncer is not None else None
 
     delay = RETRY_MIN
