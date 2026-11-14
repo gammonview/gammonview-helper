@@ -324,11 +324,11 @@ wheels = [
 
 [[package]]
 name = "gammonview"
-version = "3.3.0"
+version = "3.4.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a6/c9/5a2340114e074a99eb46e50907d190ba0832c94fee3cce173be20d60786a/gammonview-3.3.0.tar.gz", hash = "sha256:3bde94e1ad7e96f59b11fa24ca49ec5bc2510c924410d6651d1184a64345c698", size = 3884990, upload-time = "2026-11-06T01:44:52.756Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/43/a3/ccd9fa0ead20a72f5c1e2fdb064c813738d8eff70b2877649eb53962dee7/gammonview-3.4.1.tar.gz", hash = "sha256:80ad2dbd0edfd9d5d3b770c68f5ca2762866bafd3ff0474537d155daead5dfb0", size = 3933916, upload-time = "2026-11-14T02:58:05.488Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/75/5d/c1ee8fa8d002e9653d5d8bc3ff9cd105a817133f20dc1912f1b63a86a58b/gammonview-3.3.0-py3-none-any.whl", hash = "sha256:7a0a83dbfd21348e56c682fd4e0c5c580587a2eecd9af27e7262e60b5618a056", size = 313580, upload-time = "2026-11-06T01:44:50.936Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/6a/bce78f148c81509a144aa3779e30873e76e75db650c4defbb41559ee29aa/gammonview-3.4.1-py3-none-any.whl", hash = "sha256:21fb57b52aa587d5e47e70bbb2cb41ba181e20ef8596f05855149bb47e2cda79", size = 317049, upload-time = "2026-11-14T02:58:03.641Z" },
 ]
 
 [package.optional-dependencies]
@@ -363,7 +363,7 @@ dev = [
 requires-dist = [
     { name = "bgsage", marker = "sys_platform == 'win32'", specifier = "==2.0.20260907" },
     { name = "dbus-fast", marker = "sys_platform == 'linux'", specifier = ">=2.0" },
-    { name = "gammonview", extras = ["engine"], specifier = ">=3.3.0" },
+    { name = "gammonview", extras = ["engine"], specifier = ">=3.4.1" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25.0" },
     { name = "msvc-runtime", marker = "sys_platform == 'win32'", specifier = ">=14.44" },
