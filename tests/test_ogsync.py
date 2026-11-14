@@ -668,3 +668,11 @@ def test_a_progress_line_that_fails_never_fails_the_sync(allowance):
     s = syncer(account, FakeOg([m("a", NOW - 600)], allowance), allowance)
     s.check(asked=True)
     assert "a" in account.inbox
+
+
+def test_an_iso_time_reads_the_same_on_every_supported_python():
+    # 3.10's fromisoformat refuses a trailing "Z" and any fraction but 3 or 6 digits.
+    assert ogsync._unix("2026-09-06T19:05:18.5") == pytest.approx(1788721518.5)
+    assert ogsync._unix("2026-09-06T19:05:18.500000Z") == pytest.approx(1788721518.5)
+    assert ogsync._unix("2026-09-06T19:05:18.1234567+00:00") == pytest.approx(1788721518.123456)
+    assert ogsync._unix("not a time") is None

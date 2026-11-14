@@ -342,10 +342,18 @@ class OpenGammon:
         return gzip.compress(r.content)
 
 
+_ISO_FRACTION = re.compile(r"\.(\d+)")
+
+
 def _unix(iso) -> float | None:
     """An ISO time as unix seconds, as the older record's `analysed_time` was."""
+    # Python 3.10's parser takes a fraction of exactly 3 or 6 digits and no
+    # trailing "Z"; later ones take both, so normalise to what all of them read.
+    iso = _ISO_FRACTION.sub(lambda m: "." + m.group(1).ljust(6, "0")[:6], str(iso))
+    if iso.endswith(("Z", "z")):
+        iso = iso[:-1] + "+00:00"
     try:
-        at = datetime.fromisoformat(str(iso))
+        at = datetime.fromisoformat(iso)
     except ValueError:
         return None
     return (at if at.tzinfo else at.replace(tzinfo=timezone.utc)).timestamp()
