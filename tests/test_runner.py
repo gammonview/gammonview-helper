@@ -235,3 +235,80 @@ def test_judging_resignations_is_in_the_label():
     doc = read_gvab(gzip.decompress(out))
     labels = [info.get("preset") for info in doc["analyses_info"]]
     assert f"{runner.custom('my-quick', spec).label}+resign" in labels
+
+
+# --- plays: one position, or named moves of it ---------------------------------
+
+
+@pytest.fixture
+def fake_engine(monkeypatch):
+    """`play` with the engine swapped out, and a record of what it was asked.
+
+    Both analysis functions are stood in by name so this runs against any
+    installed `gvanalysis` -- including one from before `positionmove`, which
+    is the point of a feature word: the helper has to choose by what is there.
+    """
+    import types
+
+    calls = []
+
+    class Analyzer:
+        def __init__(self, eval_level, cubeful):
+            self.eval_level = eval_level
+
+    def analyze_position(position_id, *, level, analyzer):
+        calls.append(("position", position_id, level, analyzer))
+        return {"kind": "checker"}
+
+    def analyze_moves(position_id, notations, *, level, analyzer, jacoby, beaver):
+        calls.append(("moves", position_id, list(notations), level, analyzer, jacoby, beaver))
+        return {"moves": []}
+
+    monkeypatch.setitem(sys.modules, "bgsage", types.SimpleNamespace(BgBotAnalyzer=Analyzer))
+    monkeypatch.setitem(sys.modules, "gvanalysis.position",
+                        types.SimpleNamespace(analyze_position=analyze_position))
+    monkeypatch.setitem(sys.modules, "gvanalysis.positionmove",
+                        types.SimpleNamespace(analyze_moves=analyze_moves))
+    monkeypatch.setattr(runner, "_play_analyzers", {})
+    return calls
+
+
+def test_a_play_without_moves_is_the_whole_position(fake_engine):
+    assert runner.play("pid", "3ply") == {"kind": "checker"}
+    (kind, position_id, level, _), = fake_engine
+    assert (kind, position_id, level) == ("position", "pid", "3ply")
+
+
+def test_a_play_with_moves_evaluates_just_those_moves(fake_engine):
+    assert runner.play("pid", "truncated3", moves=["8/5 6/5"]) == {"moves": []}
+    (kind, position_id, notations, level, _, jacoby, beaver), = fake_engine
+    assert (kind, position_id, notations, level) == ("moves", "pid", ["8/5 6/5"], "truncated3")
+    assert (jacoby, beaver) == (True, True), "the rules default on, as on the site's route"
+
+
+def test_the_money_rules_of_a_moves_play_are_passed_through(fake_engine):
+    runner.play("pid", "3ply", moves=["8/5"], jacoby=False, beaver=False)
+    assert fake_engine[0][5:] == (False, False)
+
+
+def test_a_level_keeps_one_analyzer_across_both_kinds_of_play(fake_engine):
+    runner.play("pid", "3ply")
+    runner.play("pid", "3ply", moves=["8/5"])
+    runner.play("pid", "2ply", moves=["8/5"])
+    assert fake_engine[0][3] is fake_engine[1][4], "built once per level, then reused"
+    assert fake_engine[2][4] is not fake_engine[1][4]
+
+
+def test_the_moves_feature_is_offered_exactly_when_the_engine_has_it():
+    try:
+        from gvanalysis.positionmove import analyze_moves  # noqa: F401
+        has = True
+    except Exception:
+        has = False
+    assert (runner.MOVES in runner.engine_features()) == has
+    assert runner.MOVES == "moves"
+
+
+def test_the_moves_feature_is_withheld_from_an_engine_without_it(monkeypatch):
+    monkeypatch.setitem(sys.modules, "gvanalysis.positionmove", None)  # import raises
+    assert runner.MOVES not in runner.engine_features()

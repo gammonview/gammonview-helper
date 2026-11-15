@@ -65,7 +65,9 @@ classifiers = [
 # money session under the Jacoby and beaver rules it was played under; before
 # it, every one was judged with both on. 3.4.1 keeps the steps of a checker
 # borne off with both dice and pips to spare (8/off with a 4-5); before it, such
-# a play was written with none and shown as no move.
+# a play was written with none and shown as no move. 3.5.0 is the first that can
+# evaluate named moves of a checker play, which the analysis panel's upgrade
+# buttons ask for.
 #
 # On Windows, `bgsage` is pinned exactly and `msvc-runtime` comes with it: the
 # engine's extension crashes against a C++ runtime older than the compiler it
@@ -74,7 +76,7 @@ classifiers = [
 # may move to a newer compiler -- so moving it means running an analysis on a
 # Windows machine with an old runtime first.
 dependencies = [
-    "gammonview[engine]>=3.4.1",
+    "gammonview[engine]>=3.5.0",
     "httpx>=0.27",
     "keyring>=25.0",
     "rumps>=0.4; sys_platform == 'darwin'",

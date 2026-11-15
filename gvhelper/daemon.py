@@ -484,7 +484,10 @@ def start_plays(cfg: Config, token: str, control: Control | None,
                 if wanted is None:
                     continue
                 try:
-                    result = play(wanted["position_id"], wanted["level"])
+                    result = play(
+                        wanted["position_id"], wanted["level"],
+                        moves=wanted.get("moves"),
+                        jacoby=wanted.get("jacoby"), beaver=wanted.get("beaver"))
                 except Exception as e:  # noqa: BLE001 - the engine's sentence, to the page
                     try:
                         plays_client.answer_play(wanted["id"], error=str(e) or type(e).__name__)

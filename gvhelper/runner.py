@@ -213,6 +213,11 @@ RESIGN_ERRORS = "resign_errors"
 #: the site's play page. The relay offers a play only to a helper saying this.
 PLAYS = "plays"
 
+#: The feature word for evaluating individual named moves of a checker play: the
+#: "Upgrade this move" buttons in the analysis panel. The relay hands a play
+#: carrying `moves` only to a helper saying this.
+MOVES = "moves"
+
 
 class PresetRefused(ValueError):
     """The engine would not run a custom preset's definition.
@@ -250,6 +255,11 @@ def engine_features() -> list[str]:
         out.append(PLAYS)
     except Exception:  # installed without the engine
         pass
+    try:
+        from gvanalysis.positionmove import analyze_moves  # noqa: F401
+        out.append(MOVES)
+    except Exception:  # an engine before named moves, or none installed
+        pass
     return out
 
 
@@ -260,20 +270,36 @@ _play_analyzers: dict = {}
 _play_lock = threading.Lock()
 
 
-def play(position_id: str, level: str) -> dict:
+def play(position_id: str, level: str, *, moves: list[str] | None = None,
+         jacoby: bool | None = None, beaver: bool | None = None) -> dict:
     """One position's analysis, for a bot deciding its move.
 
     The site's own `POST /position` answer, made by the same call
     (`gvanalysis.analyze_position`), so the page reads it with the code that
     already reads that endpoint's.
+
+    With `moves` it is the site's `POST /position/moves` answer instead, made
+    by `gvanalysis.positionmove.analyze_moves`: those named moves evaluated at
+    `level`, for an "Upgrade this move" button. The money rules default to on
+    there, as they do on the site's route; `analyze_position` takes them from
+    the id when left unset, which is why the two are not passed alike.
     """
     from bgsage import BgBotAnalyzer
-    from gvanalysis.position import analyze_position
 
     with _play_lock:
         analyzer = _play_analyzers.get(level)
         if analyzer is None:
             analyzer = _play_analyzers[level] = BgBotAnalyzer(eval_level=level, cubeful=True)
+    if moves is not None:
+        from gvanalysis.positionmove import analyze_moves
+
+        return analyze_moves(
+            position_id, moves, level=level, analyzer=analyzer,
+            jacoby=True if jacoby is None else jacoby,
+            beaver=True if beaver is None else beaver)
+
+    from gvanalysis.position import analyze_position
+
     return analyze_position(position_id, level=level, analyzer=analyzer)
 
 

@@ -537,3 +537,59 @@ def test_a_region_refusal_waits_an_hour_and_says_why(cfg, monkeypatch):
     # The sync thread shares `control.sleep`, so its own waits are in `slept`
     # too; what matters is that the loop's wait was the hour.
     assert daemon.REGION_RETRY in slept
+
+
+# --- plays: the thread that answers the site's position questions ---------------
+
+
+def _answer_plays(cfg, monkeypatch, wanted):
+    """Run `start_plays` against one scripted play; return what `play` was
+    called with and what was handed back."""
+    seen, answered = {}, threading.Event()
+
+    class FakeClient:
+        def __init__(self, cfg, token):
+            self.sent = False
+
+        def next_play(self):
+            if self.sent:
+                answered.wait(0.01)
+                return None
+            self.sent = True
+            return wanted
+
+        def answer_play(self, play_id, *, result=None, error=None):
+            seen["answer"] = (play_id, result, error)
+            answered.set()
+
+        def close(self):
+            pass
+
+    def fake_play(position_id, level, **kwargs):
+        seen["call"] = (position_id, level, kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(daemon, "WorkerClient", FakeClient)
+    monkeypatch.setattr(daemon, "engine_features", lambda: [daemon.PLAYS])
+    monkeypatch.setattr(daemon, "play", fake_play)
+    control = daemon.Control()
+    thread = daemon.start_plays(cfg, "tok", control, lambda: True)
+    assert answered.wait(5)
+    control.stop()
+    thread.join(5)
+    return seen
+
+
+def test_a_play_asking_for_moves_is_handed_them(cfg, monkeypatch):
+    seen = _answer_plays(cfg, monkeypatch, {
+        "id": "p1", "position_id": "pid", "level": "truncated3",
+        "moves": ["8/5 6/5"], "jacoby": False, "beaver": True})
+    assert seen["call"] == ("pid", "truncated3",
+                            {"moves": ["8/5 6/5"], "jacoby": False, "beaver": True})
+    assert seen["answer"] == ("p1", {"ok": True}, None)
+
+
+def test_a_play_without_moves_is_asked_as_before(cfg, monkeypatch):
+    seen = _answer_plays(cfg, monkeypatch, {"id": "p2", "position_id": "pid", "level": "3ply"})
+    assert seen["call"] == ("pid", "3ply", {"moves": None, "jacoby": None, "beaver": None})
+    assert seen["answer"] == ("p2", {"ok": True}, None)
