@@ -184,7 +184,7 @@ class HelperMenu:
     def items(self) -> list[dict]:
         """Every item, in order: id, label, enabled, visible, and what it does."""
         c = self.control
-        account, og, version = account_line(c), self.og_line(), offered(self.release)
+        account, og, offer = account_line(c), self.og_line(), offered(self.release)
 
         def item(id_, label, action=None, enabled=True, visible=True):
             return {"id": id_, "label": label, "action": action,
@@ -200,8 +200,8 @@ class HelperMenu:
             item(LINK, link_label(c, self.linking), self.on_link,
                  enabled=link_enabled(c, self.linking), visible=c.state != "starting"),
             {"id": SEP2, "separator": True},
-            item(UPDATE, f"Update to {version}…" if version else "", self.on_update,
-                 enabled=c.state != "busy", visible=version is not None),
+            item(UPDATE, offer.label if offer else "", self.on_update,
+                 enabled=c.state != "busy", visible=offer is not None),
             item(ABOUT, "About GammonView Helper", self.on_about),
             item(QUIT, "Quit GammonView Helper", self.on_quit),
         ]
@@ -310,19 +310,19 @@ class HelperMenu:
         later(self.update)
 
     def update(self) -> None:
-        version = offered(self.release)
-        if version is None or self.release is None:
+        offer = offered(self.release)
+        if offer is None or self.release is None:
             return
         where = update.target(os.path.abspath(sys.argv[0]))
         if where is None:
             linuxapp.tell((
-                f"GammonView Helper {version} is available",
+                offer.available,
                 "This copy was not installed with `uv tool`, so update it the "
                 "way you installed it.",
             ))
             return
         if not self.ask(
-            f"Update GammonView Helper to {version}?",
+            offer.question,
             "It takes a minute or two, and the helper starts again when it is done.",
         ):
             return

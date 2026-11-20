@@ -104,6 +104,16 @@ def test_the_account_line_appears_once_the_site_has_named_it():
 
 def test_update_is_offered_only_for_a_newer_release(monkeypatch):
     monkeypatch.setattr(tray, "__version__", "0.8.0")
+    monkeypatch.setattr(tray, "analysis_version", lambda: "3.6.1")
     assert tray.offered(None) is None
     assert tray.offered({"version": "0.8.0"}) is None
-    assert tray.offered({"version": "0.9.0"}) == "0.9.0"
+    assert tray.offered({"version": "0.9.0"}).label == "Update to 0.9.0…"
+
+
+def test_an_engine_behind_the_pin_is_offered_in_the_same_item(monkeypatch):
+    monkeypatch.setattr(tray, "__version__", "0.8.0")
+    monkeypatch.setattr(tray, "analysis_version", lambda: "3.6.0")
+    got = tray.offered({"version": "0.8.0", "engine": "3.6.1"})
+    assert got.engine_only and got.label == "Update analysis engine to 3.6.1…"
+    assert got.question == "Update the analysis engine to 3.6.1?"
+    assert tray.offered({"version": "0.7.0", "engine": "3.6.1"}) is None

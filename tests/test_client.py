@@ -508,3 +508,31 @@ def test_a_site_without_plays_is_a_404_the_thread_can_read(cfg):
     with pytest.raises(RelayError) as e:
         WorkerClient(cfg, "t").next_play(wait=0)
     assert e.value.status == 404
+
+
+@respx.mock
+def test_hello_carries_the_installed_analysis_version(cfg, monkeypatch):
+    from gvhelper import runner
+
+    route = respx.post(f"{RELAY}/worker/hello").mock(
+        return_value=httpx.Response(200, json={"status": "ok"}))
+    monkeypatch.setattr(runner, "analysis_version", lambda: "3.6.1")
+    WorkerClient(cfg, "tok").register("Mac", "1.0.0", "bgsage", ["fast"], features=[])
+    assert json.loads(route.calls.last.request.read())["analysis"] == "3.6.1"
+
+
+@respx.mock
+def test_the_engine_pin_is_heard_beside_the_release(cfg, monkeypatch):
+    from gvhelper import update
+
+    monkeypatch.setattr(update, "_heard", None)
+    monkeypatch.setattr(update, "_heard_engine", None)
+    client = WorkerClient(cfg, "tok")
+    respx.post(f"{RELAY}/worker/hello").mock(return_value=httpx.Response(
+        200, json={"status": "ok", "release": "0.12.0", "engine": "3.6.1"}))
+    client.register("Mac", "1.0.0", "bgsage", ["fast"], features=[])
+    assert update.heard_both() == ("0.12.0", "3.6.1")
+    respx.get(f"{RELAY}/worker/next-job").mock(return_value=httpx.Response(
+        200, json={"job": None, "release": "0.12.0", "engine": "3.7.0"}))
+    client.next_job(wait=0)
+    assert update.heard_both() == ("0.12.0", "3.7.0")

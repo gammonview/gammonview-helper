@@ -67,7 +67,10 @@ classifiers = [
 # borne off with both dice and pips to spare (8/off with a 4-5); before it, such
 # a play was written with none and shown as no move. 3.5.0 is the first that can
 # evaluate named moves of a checker play, which the analysis panel's upgrade
-# buttons ask for.
+# buttons ask for. 3.6.1 is the first with the `deep_plus` ("Deep+") preset,
+# which the site now offers on helpers too; a helper below it would be asked for
+# a preset it cannot name. The site's manifest can also pin an engine newer than
+# this floor (`engine` in `helper-release.json`), which the menu installs.
 #
 # On Windows, `bgsage` is pinned exactly and `msvc-runtime` comes with it: the
 # engine's extension crashes against a C++ runtime older than the compiler it
@@ -76,7 +79,7 @@ classifiers = [
 # may move to a newer compiler -- so moving it means running an analysis on a
 # Windows machine with an old runtime first.
 dependencies = [
-    "gammonview[engine]>=3.5.0",
+    "gammonview[engine]>=3.6.1",
     "httpx>=0.27",
     "keyring>=25.0",
     "rumps>=0.4; sys_platform == 'darwin'",

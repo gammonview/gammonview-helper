@@ -26,6 +26,13 @@ def test_the_install_command_is_the_installers(tmp_path):
         "gammonview-helper", "gammonview-helper==0.9.1"]
 
 
+def test_an_engine_pin_adds_the_engine_to_the_install(tmp_path):
+    argv = winmaint.install_argv(tmp_path, "0.9.1", "3.13", "3.6.1")
+    assert argv[-5:] == ["gammonview-helper==0.9.1", "--refresh-package", "gammonview",
+                         "--with", "gammonview[engine]==3.6.1"]
+    assert "--with" not in winmaint.install_argv(tmp_path, "0.9.1", "3.13")
+
+
 def test_the_uv_environment_is_the_one_update_uses(tmp_path):
     keys = [k for k in update.environment(tmp_path) if k.startswith("UV_")]
     assert {k: winmaint.uv_environment(tmp_path)[k] for k in keys} == \
@@ -41,13 +48,13 @@ def test_the_hand_off_runs_a_copy_of_this_file_isolated(tmp_path, monkeypatch):
         started.append((argv, kw))
 
     assert winmaint.start_update(tmp_path / "root", "GammonView Helper S-1", "0.9.1", "3.13",
-                                 popen=popen, interpreter=pythonw)
+                                 "3.6.1", popen=popen, interpreter=pythonw)
     (argv, kw), = started
     assert argv[:2] == [str(pythonw), "-I"], "stdlib only: nothing from the venv"
     script = Path(argv[2])
     assert script.parent == tmp_path and script.read_text() == Path(winmaint.__file__).read_text()
     assert argv[3:] == ["--root", str(tmp_path / "root"), "--task", "GammonView Helper S-1",
-                        "--version", "0.9.1", "--python", "3.13"]
+                        "--version", "0.9.1", "--python", "3.13", "--engine", "3.6.1"]
     assert kw["creationflags"] & winmaint.CREATE_BREAKAWAY_FROM_JOB
 
 

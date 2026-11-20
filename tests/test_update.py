@@ -283,25 +283,41 @@ class Clock:
 @pytest.fixture
 def unheard(monkeypatch):
     monkeypatch.setattr(update, "_heard", None)
+    monkeypatch.setattr(update, "_heard_engine", None)
 
 
 def test_a_new_release_from_the_relay_cuts_the_wait_short(monkeypatch, unheard):
     update.hear("0.12.0")
     clock = Clock(monkeypatch, during=lambda t: t >= 300 and update.hear("0.12.1"))
-    assert update.wait_for_release(clock, "0.12.0") == "0.12.1"
+    assert update.wait_for_release(clock, ("0.12.0", None)) == ("0.12.1", None)
     assert clock.t == 300, "within a minute of hearing it, not six hours"
 
 
 def test_the_same_release_waits_out_the_check_interval(monkeypatch, unheard):
     update.hear("0.12.0")
     clock = Clock(monkeypatch)
-    assert update.wait_for_release(clock, "0.12.0") == "0.12.0"
+    assert update.wait_for_release(clock, ("0.12.0", None)) == ("0.12.0", None)
     assert clock.t == update.CHECK_INTERVAL
+
+
+def test_an_engine_only_bump_cuts_the_wait_short_too(monkeypatch, unheard):
+    update.hear("0.12.0", "3.6.0")
+    clock = Clock(monkeypatch, during=lambda t: t >= 300 and update.hear("0.12.0", "3.6.1"))
+    assert update.wait_for_release(clock, ("0.12.0", "3.6.0")) == ("0.12.0", "3.6.1")
+    assert clock.t == 300
+
+
+def test_an_answer_with_no_release_changes_neither(unheard):
+    update.hear("0.12.0", "3.6.1")
+    update.hear(None, "3.7.0")
+    assert update.heard_both() == ("0.12.0", "3.6.1")
+    update.hear("0.12.1")  # the manifest stopped pinning one
+    assert update.heard_both() == ("0.12.1", None)
 
 
 def test_an_older_site_that_names_nothing_is_the_six_hour_check(monkeypatch, unheard):
     clock = Clock(monkeypatch)
-    assert update.wait_for_release(clock, None) is None
+    assert update.wait_for_release(clock, None) == (None, None)
     assert clock.t == update.CHECK_INTERVAL
 
 
@@ -312,3 +328,88 @@ def test_only_a_version_is_heard(unheard):
     update.hear("0.12.1")
     update.hear(None)  # an answer without one does not forget it
     assert update.heard() == "0.12.1"
+
+
+# --- the engine half ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("pin, expected", [
+    ("3.6.1", "3.6.1"), ("3.6.1.dev0", None), (">=3.6", None), ("", None), (361, None), (None, None),
+])
+def test_only_a_plain_version_is_an_engine_pin(pin, expected):
+    assert update.engine_pin({"version": "1.0.0", "engine": pin}) == expected
+    assert update.engine_pin({"version": "1.0.0"}) is None
+    assert update.engine_pin(None) is None
+
+
+def test_a_newer_helper_is_offered_with_the_engine_it_brings():
+    got = update.offer({"version": "1.1.0", "engine": "3.6.1"}, "1.0.0", "3.6.1")
+    assert got == update.Offer("1.1.0", "3.6.1", False)
+    assert got.label == "Update to 1.1.0…"
+    assert got.subject == "GammonView Helper 1.1.0"
+    assert update.offer({"version": "1.1.0"}, "1.0.0", "3.6.1") == update.Offer("1.1.0", None, False)
+
+
+def test_an_engine_behind_the_pin_is_offered_to_the_current_helper_alone():
+    got = update.offer({"version": "1.0.0", "engine": "3.6.1"}, "1.0.0", "3.6.0")
+    assert got == update.Offer("1.0.0", "3.6.1", True)
+    assert got.label == "Update analysis engine to 3.6.1…"
+    assert got.subject == "the analysis engine 3.6.1"
+    assert update.offer({"version": "1.0.0", "engine": "3.6.1"}, "1.0.0", "3.10.0") is None
+    assert update.offer({"version": "1.0.0", "engine": "3.6.1"}, "1.0.0", "3.6.1") is None
+
+
+def test_a_helper_ahead_of_the_manifest_is_offered_nothing():
+    # A beta: the pinned engine is only known to work with the released helper.
+    assert update.offer({"version": "1.0.0", "engine": "3.6.1"}, "1.1.0", "3.6.0") is None
+
+
+def test_a_dev_build_is_never_offered_either_kind():
+    release = {"version": "1.0.0", "engine": "3.6.1"}
+    assert update.offer(release, "1.0.0.dev0+gabc", "3.6.0") is None
+    assert update.offer(release, "unknown", "3.6.0") is None
+    assert update.offer(None, "1.0.0", "3.6.0") is None
+
+
+def test_no_usable_pin_or_no_engine_installed_is_no_engine_offer():
+    assert update.offer({"version": "1.0.0"}, "1.0.0", "3.6.0") is None
+    assert update.offer({"version": "1.0.0", "engine": ">=3.6"}, "1.0.0", "3.6.0") is None
+    assert update.offer({"version": "1.0.0", "engine": "3.6.1"}, "1.0.0", None) is None
+    assert update.offer({"version": "1.0.0", "engine": "3.6.1"}, "1.0.0", "weird") is None
+
+
+def test_a_pin_adds_the_engine_to_the_install(tmp_path):
+    root = installer_layout(tmp_path)
+    seen = []
+
+    def run(argv, **kw):
+        seen.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    where = update.target(str(root / "bin" / "gammonview-helper"))
+    update.install(where, {"version": "0.5.0", "engine": "3.6.1"}, run)
+    update.install(where, {"version": "0.5.0", "engine": "latest"}, run)
+    assert seen[0] == [
+        str(root / "bin" / "uv"), "tool", "install", "--force", "--refresh-package", "gammonview-helper",
+        "gammonview-helper==0.5.0",
+        "--refresh-package", "gammonview", "--with", "gammonview[engine]==3.6.1",
+    ]
+    assert "--with" not in seen[1], "a pin that is not a plain version is no pin"
+
+
+def test_the_engine_not_being_listed_yet_is_retried_like_the_helper(tmp_path):
+    unlisted = ("  x Because there is no version of gammonview==3.6.1 and you require "
+                "gammonview==3.6.1, we can conclude that your requirements are unsatisfiable.\n")
+    root = installer_layout(tmp_path)
+    answers = [unlisted, ""]
+    waits = []
+
+    def run(argv, **kw):
+        stderr = answers.pop(0)
+        return subprocess.CompletedProcess(argv, 1 if stderr else 0, "", stderr)
+
+    where = update.target(str(root / "bin" / "gammonview-helper"))
+    assert update.install(where, {"version": "0.5.0", "engine": "3.6.1"}, run, waits.append) is None
+    assert waits == [update.NOT_LISTED_WAIT]
+    # Without a pin, that sentence is somebody else's failure and is not retried.
+    assert not update._not_listed(unlisted, "0.5.0")

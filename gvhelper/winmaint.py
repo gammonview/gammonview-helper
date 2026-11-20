@@ -88,13 +88,27 @@ def uv_environment(root: Path) -> dict[str, str]:
     }
 
 
-def install_argv(root: Path, version: str, python: str | None) -> list[str]:
-    """`Installer.InstallArguments`, run with the installer's `uv`."""
+def install_argv(root: Path, version: str, python: str | None,
+                 engine: str | None = None) -> list[str]:
+    """`Installer.InstallArguments`, run with the installer's `uv` -- and, with
+    an `engine`, the site's pin for `gammonview` as well.
+
+    **That second part goes beyond what it mirrors.** The frozen launcher's
+    `InstallArguments` installs the helper and lets its dependency floor choose
+    the engine; it knows nothing of the manifest's `engine`. That is fine: the
+    launcher's install is the first one, and this is the menu's, which is the
+    same command `update.install` runs elsewhere ("make this machine match the
+    manifest"). The extra arguments only ever ask uv for a *specific* version
+    of a package the helper already depends on, so no installed launcher has to
+    understand them.
+    """
     argv = [str(root / "bin" / "uv.exe"), "tool", "install", "--force",
             "--refresh-package", "gammonview-helper"]
     if python:
         argv += ["--python", python]
     argv.append(f"gammonview-helper=={version}")
+    if engine:
+        argv += ["--refresh-package", "gammonview", "--with", f"gammonview[engine]=={engine}"]
     return argv
 
 
@@ -258,6 +272,7 @@ def remove_app_entry() -> None:
 
 
 def start_update(root: Path, task: str, version: str, python: str | None,
+                 engine: str | None = None,
                  popen=subprocess.Popen, interpreter: Path | None = None) -> bool:
     """Hand the update to a process outside the venv. True if it started.
 
@@ -274,6 +289,8 @@ def start_update(root: Path, task: str, version: str, python: str | None,
                 "--version", version]
         if python:
             argv += ["--python", python]
+        if engine:
+            argv += ["--engine", engine]
         detach(popen, argv, close_fds=True, cwd=tempfile.gettempdir())
     except OSError:
         return False
@@ -290,7 +307,8 @@ def _say(title: str, message: str, warning: bool) -> None:
         (MB_ICONWARNING if warning else MB_ICONINFORMATION) | MB_SETFOREGROUND | MB_TOPMOST)
 
 
-def update(root: Path, task: str, version: str, python: str | None, log) -> bool:
+def update(root: Path, task: str, version: str, python: str | None, log,
+           engine: str | None = None) -> bool:
     """The update itself, run from outside the venv. True if it installed."""
     venv = root / "tools" / "gammonview-helper"
 
@@ -312,7 +330,7 @@ def update(root: Path, task: str, version: str, python: str | None, log) -> bool
              "computer, then choose Update again.", True)
         return False
 
-    argv = install_argv(root, version, python)
+    argv = install_argv(root, version, python, engine)
     log("running: " + " ".join(argv))
     done = subprocess.run(argv, env=uv_environment(root), capture_output=True, text=True,
                           **quiet())
@@ -341,6 +359,7 @@ def _main(argv: list[str]) -> int:
     p.add_argument("--task", required=True)
     p.add_argument("--version", required=True)
     p.add_argument("--python")
+    p.add_argument("--engine")
     a = p.parse_args(argv)
     root = Path(a.root)
 
@@ -355,7 +374,7 @@ def _main(argv: list[str]) -> int:
             f.flush()
 
         try:
-            ok = update(root, a.task, a.version, a.python, log)
+            ok = update(root, a.task, a.version, a.python, log, a.engine)
         except Exception as e:  # noqa: BLE001 - logged, and said
             log(f"failed: {type(e).__name__}: {e}")
             subprocess.run(["schtasks", "/Run", "/TN", a.task], capture_output=True, **quiet())

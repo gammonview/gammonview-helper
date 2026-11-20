@@ -46,6 +46,7 @@ from typing import Callable
 from . import __version__, update
 from .config import Config, machine_name
 from .daemon import Control, sign_off
+from .runner import analysis_version
 from .store import load_token
 
 #: The login item's launchd label: `LoginItem.swift` and
@@ -182,11 +183,11 @@ def link_enabled(control: Control, linking: bool) -> bool:
     return control.state != "busy"
 
 
-def offered(release: dict | None) -> str | None:
-    """The version the Update item offers, if any."""
-    if release is None or not update.newer(release["version"], __version__):
-        return None
-    return release["version"]
+def offered(release: dict | None) -> update.Offer | None:
+    """What the Update item offers, if anything: a helper release, or only the
+    analysis engine (`update.offer`). It reads the installed engine's version
+    from metadata, so asking never imports the engine an update is replacing."""
+    return update.offer(release, __version__, analysis_version())
 
 
 def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
@@ -477,11 +478,10 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
                 said = update.wait_for_release(control, said)
 
         def _draw_update(self) -> None:
-            release = self._release
-            offered = release is not None and update.newer(release["version"], __version__)
-            self.update.hidden = not offered
-            if offered:
-                self.update.title = f"Update to {release['version']}…"
+            offer = offered(self._release)
+            self.update.hidden = offer is None
+            if offer is not None:
+                self.update.title = offer.label
                 # An update restarts the helper, which would end a match
                 # half-analysed; the item comes back when it is done.
                 busy = control.state == "busy" or self._updating
@@ -489,13 +489,16 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
 
         def on_update(self, _sender) -> None:
             release = self._release
-            if release is None:
+            # Read before the install, not after: once it has replaced the
+            # package on disk nothing new may be imported (`restart_login_item`).
+            offer = offered(release)
+            if release is None or offer is None:
                 return
             bring_forward()
             where = update.target(os.path.abspath(sys.argv[0]))
             if where is None:
                 rumps.alert(
-                    title=f"GammonView Helper {release['version']} is available",
+                    title=offer.available,
                     message=(
                         "This copy was not installed by the GammonView installer "
                         "or with `uv tool`, so update it the way you installed it."
@@ -506,12 +509,12 @@ def run(cfg: Config, control: Control, loop: Callable[[], int]) -> int:
                 # Started by hand, so there is a terminal, and nothing here
                 # could restart it: the command does both halves there.
                 rumps.alert(
-                    title=f"GammonView Helper {release['version']} is available",
+                    title=offer.available,
                     message="Quit this copy, then run `gammonview-helper update` in a terminal.",
                 )
                 return
             confirmed = rumps.alert(
-                title=f"Update GammonView Helper to {release['version']}?",
+                title=offer.question,
                 message="It takes a minute or two, and the helper restarts when it is done.",
                 ok="Update",
                 cancel="Cancel",

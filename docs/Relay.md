@@ -45,7 +45,7 @@ rather than offering another go.
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| POST | `/worker/hello` | name, version, engine, presets, features, available |
+| POST | `/worker/hello` | name, version, engine, presets, features, available, analysis |
 | GET | `/worker/next-job?wait=` | long poll; server clamps `wait` to **25s** |
 | POST | `/worker/jobs/{id}/progress` | also the lease renewal |
 | POST | `/worker/jobs/{id}/result` | raw `application/octet-stream` body |
@@ -110,6 +110,20 @@ menu offers an update about when the site's banner starts asking for one. The
 manifest still decides what is offered. Added within revision 4: an older
 helper ignores it, and against an older relay a helper hears nothing and
 keeps the six-hourly check.
+
+**`engine`**, beside `release`, is the `gammonview` version (the analysis
+engine, `gvanalysis`) the manifest's own `engine` field pins, or absent. It is
+what lets the menu offer an engine-only update: when the helper is exactly the
+released version and the installed engine is behind the pin, the one Update item
+reads "Update analysis engine to X…" (`update.offer`). A helper older than the
+release is offered the helper update instead, which installs the pinned engine
+too, since the pin is only known to work with the released helper. Either way
+the install is one command: the pinned helper plus
+`--refresh-package gammonview --with gammonview[engine]==X`. A bump to `engine`
+alone cuts the wait short as a new `release` does. In the other direction,
+`hello` carries **`analysis`**, the installed `gammonview` version (null when
+it is not installed), for the relay to keep on the worker row. Both are
+additive: an older helper or relay ignores them.
 
 **`outdated`**, on the same answers, is true when this helper is older than
 the manifest's `minimum`, which a release raises when it fixes what analyses

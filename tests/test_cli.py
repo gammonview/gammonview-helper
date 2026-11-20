@@ -681,9 +681,9 @@ def test_update_on_windows_hands_the_update_to_a_process_outside_the_venv(
     monkeypatch.setattr(update, "install", lambda *a: pytest.fail("installed under a running helper"))
     started = []
     monkeypatch.setattr(winapp, "start_update",
-                        lambda root, version, python: started.append((root, version)) or True)
+                        lambda root, version, python, engine=None: started.append((root, version, engine)) or True)
     assert cli.main(["update"]) == 0
-    assert started == [(tmp_path, "0.8.0")]
+    assert started == [(tmp_path, "0.8.0", None)]
     assert "in the background" in capsys.readouterr().out
 
 
@@ -791,3 +791,41 @@ def test_pause_and_resume_reach_a_running_helper(capsys, monkeypatch):
         assert "taking matches again" in capsys.readouterr().out
     finally:
         control.stop()
+
+
+def _pinned(monkeypatch, version, engine, installed):
+    from gvhelper import cli, update
+    monkeypatch.setattr(cli, "__version__", version)
+    monkeypatch.setattr(cli, "analysis_version", lambda: installed)
+    monkeypatch.setattr(update, "latest", lambda cfg: {"version": "0.8.0", "engine": engine})
+    return update
+
+
+def test_update_brings_a_lagging_engine_to_a_current_helper(capsys, monkeypatch):
+    update = _pinned(monkeypatch, "0.8.0", "3.6.1", "3.6.0")
+    monkeypatch.setattr(update, "target", lambda helper: "where")
+    monkeypatch.setattr(update, "install", lambda where, release: None)
+    monkeypatch.setattr(update, "restart_login_item", lambda: True)
+    assert cli.main(["update"]) == 0
+    out = capsys.readouterr().out
+    assert "Updating the analysis engine from 3.6.0 to 3.6.1" in out
+    assert "Updated the analysis engine to 3.6.1, and restarted." in out
+
+
+def test_update_is_up_to_date_when_neither_is_behind(capsys, monkeypatch):
+    update = _pinned(monkeypatch, "0.8.0", "3.6.1", "3.6.1")
+    monkeypatch.setattr(update, "install", lambda *a: pytest.fail("installed"))
+    assert cli.main(["update"]) == 0
+    assert "up to date" in capsys.readouterr().out
+
+
+def test_update_on_windows_passes_the_engine_on(capsys, monkeypatch, tmp_path):
+    from gvhelper import winapp
+    update = _pinned(monkeypatch, "0.8.0", "3.6.1", "3.6.0")
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(update, "installer_root", lambda helper: tmp_path)
+    started = []
+    monkeypatch.setattr(winapp, "start_update",
+                        lambda root, version, python, engine=None: started.append(engine) or True)
+    assert cli.main(["update"]) == 0
+    assert started == ["3.6.1"]

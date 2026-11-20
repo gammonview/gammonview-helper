@@ -306,17 +306,22 @@ class WorkerClient:
         `features` defaults to what this helper can do
         (`machine.helper_features`: its engine's, and this computer's), so no
         caller can forget to say it -- a hello without it reads as a helper that
-        cannot run custom presets, and the site would stop offering them.
+        cannot run custom presets, and the site would stop offering them. The
+        same goes for `analysis`, the installed `gammonview` version, which the
+        site compares with its pin to say an engine update is waiting.
         """
         if features is None:
             from .machine import helper_features
 
             features = helper_features()
+        from .runner import analysis_version
+
         response = _check(
             _send(self._client, "POST",
                 f"{self._base}/hello",
                 json={"name": name, "version": version, "engine": engine, "presets": presets,
-                      "features": features, "available": bool(self.available())},
+                      "features": features, "available": bool(self.available()),
+                      "analysis": analysis_version()},
             ),
             "Could not register this computer.",
         )
@@ -335,7 +340,7 @@ class WorkerClient:
         carries them."""
         if self.settings is not None:
             self.settings.update(body.get("settings"))
-        update.hear(body.get("release"))
+        update.hear(body.get("release"), body.get("engine"))
         update.hear_held(body.get("outdated"))
 
     # --- OpenGammon sync (docs/OpenGammonSync.md in the GammonView repo) ------

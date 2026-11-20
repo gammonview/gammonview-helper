@@ -38,7 +38,7 @@ import webbrowser
 from . import __version__
 from .client import PairingClient, RelayError, Unauthorized, WorkerClient
 from .config import AUTO, Config, config_dir, load, machine_name, platform_name, save
-from .runner import available_presets, engine_version
+from .runner import analysis_version, available_presets, engine_version
 from .store import backend_name, clear_token, load_token, save_token
 from .winlog import log_when_windowless
 
@@ -486,6 +486,7 @@ def cmd_status(cfg: Config, args: argparse.Namespace) -> int:
         "worker_id": cfg.worker_id,
         "store": backend_name(cfg),
         "engine": engine_version(),
+        "analysis": analysis_version(),
         "presets": available_presets(),
     }
 
@@ -498,6 +499,7 @@ def cmd_status(cfg: Config, args: argparse.Namespace) -> int:
             _say(f"  worker id  : {cfg.worker_id}")
         _say(f"  credentials: {facts['store']}")
         _say(f"  engine     : {facts['engine']}")
+        _say(f"  gammonview : {facts['analysis'] or '(not installed)'}")
         _say(f"  presets    : {', '.join(facts['presets']) or '(engine not installed)'}")
         _say(f"  parallelism: {_parallelism(cfg)}, nice {cfg.nice}")
 
@@ -644,7 +646,8 @@ def cmd_start(cfg: Config, args: argparse.Namespace) -> int:
 
 
 def cmd_update(cfg: Config, args: argparse.Namespace) -> int:
-    """Install the version the site has released, and restart onto it.
+    """Install the version the site has released, and restart onto it -- the
+    helper's, and the analysis engine's when the site pins one that is behind.
 
     The one command a person is told to type when a helper is out of date, so
     it does both halves -- the install and the restart -- that otherwise take
@@ -657,13 +660,17 @@ def cmd_update(cfg: Config, args: argparse.Namespace) -> int:
     if release is None:
         _say(f"Could not reach {cfg.site} to ask which version is current.")
         return 1
-    version = release["version"]
     if not update.is_release(__version__):
         _say(f"This is a development build ({__version__}); update it from its checkout.")
         return 0
-    if not update.newer(version, __version__):
+    # Read now, before the install: afterwards the package on disk is the new
+    # one (`update.restart_login_item`), and the sentence below wants the old.
+    had = analysis_version()
+    offer = update.offer(release, __version__, had)
+    if offer is None:
         _say(f"GammonView Helper {__version__} is up to date.")
         return 0
+    version = offer.version
 
     helper = os.path.abspath(sys.argv[0])
     root = update.installer_root(helper)
@@ -673,12 +680,14 @@ def cmd_update(cfg: Config, args: argparse.Namespace) -> int:
         # replaces. So it is handed to a process outside it (`winmaint`).
         from . import winapp
 
-        if winapp.start_update(root, version, release.get("python")):
-            _say(f"Updating GammonView Helper to {version} in the background. It takes a")
+        if winapp.start_update(root, version, release.get("python"), offer.engine):
+            what = f"the analysis engine to {offer.engine}" if offer.engine_only else (
+                f"GammonView Helper to {version}")
+            _say(f"Updating {what} in the background. It takes a")
             _say("minute or two, and the helper starts again when it is done.")
             _say(f"Its log is {root / 'logs' / 'update.log'}.")
             return 0
-        _say(f"GammonView Helper {version} is out. To update, download the GammonView")
+        _say(f"{offer.available}. To update, download the GammonView")
         _say("installer from gammonview.com, open it, and choose Update.")
         return 1
 
@@ -688,15 +697,20 @@ def cmd_update(cfg: Config, args: argparse.Namespace) -> int:
         _say("so update it the way you installed it.")
         return 1
 
-    _say(f"Updating GammonView Helper {__version__} to {version}. This takes a minute or two.")
+    if offer.engine_only:
+        _say(f"Updating the analysis engine from {had} to {offer.engine}. This takes a minute or two.")
+        done = f"Updated the analysis engine to {offer.engine}"
+    else:
+        _say(f"Updating GammonView Helper {__version__} to {version}. This takes a minute or two.")
+        done = f"Updated to {version}"
     problem = update.install(where, release)
     if problem is not None:
         _say(f"The update did not finish: {problem}")
         return 1
     if update.restart_login_item():
-        _say(f"Updated to {version}, and restarted.")
+        _say(f"{done}, and restarted.")
     else:
-        _say(f"Updated to {version}. If the helper is running, stop it and start it again")
+        _say(f"{done}. If the helper is running, stop it and start it again")
         _say("to use the new version.")
     return 0
 

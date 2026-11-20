@@ -148,16 +148,21 @@ def start_update(
     root: Path,
     version: str,
     python: str | None,
+    engine: str | None = None,
     sid: Callable[[], str | None] = current_sid,
     launch: Callable[..., bool] | None = None,
 ) -> bool:
-    """Hand an update to `winmaint`, naming this user's login item. True if started."""
+    """Hand an update to `winmaint`, naming this user's login item. True if started.
+
+    `engine` is the `gammonview` version the manifest pins, if it does; it
+    rides along so the detached process installs it with the helper.
+    """
     me = sid()
     if me is None:
         return False
     if launch is None:
         from .winmaint import start_update as launch
-    return launch(root, task_name(me), version, python)
+    return launch(root, task_name(me), version, python, engine)
 
 
 # --- dialogs -----------------------------------------------------------------

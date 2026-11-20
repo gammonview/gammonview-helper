@@ -76,8 +76,8 @@ def test_an_update_names_this_users_login_item(tmp_path):
         launched.append(args)
         return True
 
-    assert winapp.start_update(tmp_path, "0.9.1", "3.13", sid=lambda: SID, launch=launch)
-    assert launched == [(tmp_path, f"GammonView Helper {SID}", "0.9.1", "3.13")]
+    assert winapp.start_update(tmp_path, "0.9.1", "3.13", "3.6.1", sid=lambda: SID, launch=launch)
+    assert launched == [(tmp_path, f"GammonView Helper {SID}", "0.9.1", "3.13", "3.6.1")]
     assert not winapp.start_update(tmp_path, "0.9.1", None, sid=lambda: None, launch=launch), \
         "no SID, no task to restart"
 

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 Nicholas Vlamis
 
-"""Whether a newer helper is out, and installing it from the menu.
+"""Whether a newer helper or analysis engine is out, and installing it from the menu.
 
 **What counts as released is what the site says**, not what PyPI has: the
 installer installs the version pinned in `helper-release.json` on the site, and
@@ -19,6 +19,16 @@ command we could run for it and be sure it was the right one.
 
 Updating is not upgrading: what gets installed is the version the site pins,
 exactly, never "the newest on PyPI".
+
+**The engine is the other half of the pin.** The helper's analysis engine is
+the `gammonview` distribution (`gvanalysis`), and it only moves when the
+helper's own dependency floor does -- so a fix or a preset that is purely the
+engine's (Deep+, 3.6.1) would wait for a helper release that has nothing else
+in it. The manifest's `engine` names the `gammonview` version the site wants,
+and the menu offers it as the same single Update item, worded for what is
+behind (`Offer`). It is the same command either way: "make this machine match
+the manifest" installs the pinned helper *and*, when there is a pin, that
+engine, so the two kinds of update cannot disagree about what was asked for.
 """
 
 from __future__ import annotations
@@ -53,11 +63,13 @@ RELAY_LOOK_INTERVAL = 60
 
 _heard_lock = threading.Lock()
 _heard: str | None = None
+_heard_engine: str | None = None
 
 
-def hear(release) -> None:
+def hear(release, engine=None) -> None:
     """Note the helper version a relay answer named (`release` in `hello` and
-    `next-job`, since GammonView 1.11.1).
+    `next-job`, since GammonView 1.11.1), and the engine version beside it
+    (`engine`: the manifest's pin).
 
     The site's banner reads the manifest on every page load, so without this a
     release went out and the site said "choose Update" for up to six hours
@@ -65,16 +77,30 @@ def hear(release) -> None:
     version instead, and when it moves the menu rereads the manifest at once
     (`wait_for_release`). The manifest still decides: this only says when to
     look. An answer without one -- an older site -- changes nothing.
+
+    The engine is remembered because an engine-only release leaves `release`
+    exactly where it was: with only that to go on, the menu would not look
+    until the six-hourly check. It rides with a release and is never heard
+    alone, so an answer with no `release` changes nothing, engine or not; a
+    release with no engine forgets the last one, since the manifest it came
+    from no longer pins one.
     """
-    global _heard
+    global _heard, _heard_engine
     if isinstance(release, str) and release:
         with _heard_lock:
             _heard = release
+            _heard_engine = engine if isinstance(engine, str) and engine else None
 
 
 def heard() -> str | None:
     with _heard_lock:
         return _heard
+
+
+def heard_both() -> tuple[str | None, str | None]:
+    """The release and the engine the relay last named, read together."""
+    with _heard_lock:
+        return _heard, _heard_engine
 
 
 _held = False
@@ -98,10 +124,12 @@ def held() -> bool:
         return _held
 
 
-def wait_for_release(control, last: str | None) -> str | None:
+def wait_for_release(control, last: tuple[str | None, str | None] | None):
     """Sleep until the next manifest check is due: after `CHECK_INTERVAL`, or
-    sooner when the relay names a version other than `last`, the one it named
-    when the manifest was last read. Returns what it names now, for next time.
+    sooner when the relay names a helper version *or an engine version* other
+    than `last`, the pair it named when the manifest was last read. Returns
+    what it names now, for next time. Either one moving is enough: an
+    engine-only bump leaves the helper's release unchanged.
 
     Against `last` rather than the manifest's version, so a relay and a
     manifest that disagree -- a cached manifest, say -- cost one reread, not
@@ -113,10 +141,10 @@ def wait_for_release(control, last: str | None) -> str | None:
         if left <= 0:
             break
         control.sleep(min(RELAY_LOOK_INTERVAL, left))
-        said = heard()
-        if said is not None and said != last:
+        said = heard_both()
+        if said[0] is not None and said != last:
             return said
-    return heard()
+    return heard_both()
 
 
 def latest(cfg: Config, client: httpx.Client | None = None) -> dict | None:
@@ -156,6 +184,81 @@ def newer(release: str, current: str) -> bool:
     """
     a, b = _parts(release), _parts(current)
     return a is not None and b is not None and a > b
+
+
+def engine_pin(release: dict | None) -> str | None:
+    """The `gammonview` version the manifest wants, if it names a plain X.Y.Z.
+
+    Anything else -- absent, a dev build, a range, a typo -- is no pin: this is
+    interpolated into an install command, and a manifest that is wrong should
+    cost the person an engine update, not a failed helper one.
+    """
+    pin = (release or {}).get("engine")
+    return pin if isinstance(pin, str) and is_release(pin) else None
+
+
+@dataclass(frozen=True)
+class Offer:
+    """What the one Update item offers: a helper release, or only an engine."""
+
+    #: The helper version the install names. For an engine-only offer it is the
+    #: version already running, which is what makes the command the same one.
+    version: str
+    engine: str | None
+    engine_only: bool
+
+    @property
+    def label(self) -> str:
+        if self.engine_only:
+            return f"Update analysis engine to {self.engine}…"
+        return f"Update to {self.version}…"
+
+    @property
+    def subject(self) -> str:
+        """What is being updated, for the dialogs' sentences."""
+        if self.engine_only:
+            return f"the analysis engine {self.engine}"
+        return f"GammonView Helper {self.version}"
+
+    @property
+    def available(self) -> str:
+        """The title of a dialog saying the update cannot be run from here."""
+        if self.engine_only:
+            return f"Analysis engine {self.engine} is available"
+        return f"GammonView Helper {self.version} is available"
+
+    @property
+    def question(self) -> str:
+        """The title of the confirmation dialog."""
+        if self.engine_only:
+            return f"Update the analysis engine to {self.engine}?"
+        return f"Update GammonView Helper to {self.version}?"
+
+
+def offer(release: dict | None, current: str, installed_engine: str | None) -> Offer | None:
+    """What to offer this helper, given the manifest, its own version and the
+    `gammonview` version it has installed. None when it is up to date.
+
+    A helper that is not a plain release -- a dev build, "unknown" from a
+    checkout -- is offered nothing, as with `newer`: somebody running one chose it.
+
+    **The engine-only offer needs the helper to be exactly the released
+    version.** The manifest's engine is only known to work with the helper it
+    ships with; a newer engine under an older helper is a combination nobody
+    tested, so an older helper is offered the helper update instead, which
+    installs the pinned engine too. A helper *newer* than the manifest (a beta
+    ahead of the site) is offered nothing at all.
+    """
+    if release is None or not is_release(current):
+        return None
+    version = release["version"]
+    pin = engine_pin(release)
+    if newer(version, current):
+        return Offer(version, pin, False)
+    if (version == current and pin is not None and installed_engine is not None
+            and is_release(installed_engine) and newer(pin, installed_engine)):
+        return Offer(current, pin, True)
+    return None
 
 
 def installer_root(helper: str) -> Path | None:
@@ -256,9 +359,14 @@ NOT_LISTED = (
 )
 
 
-def _not_listed(stderr: str, version: str) -> bool:
-    """Whether uv failed because the index does not list `version` at all."""
-    return f"there is no version of gammonview-helper=={version}" in stderr
+def _not_listed(stderr: str, version: str, engine: str | None = None) -> bool:
+    """Whether uv failed because the index does not list `version` -- or the
+    engine `engine`, which reaches PyPI ahead of the manifest in the same way --
+    at all."""
+    return (f"there is no version of gammonview-helper=={version}" in stderr
+            or (engine is not None
+                and any(f"there is no version of gammonview{extra}=={engine}" in stderr
+                        for extra in ("", "[engine]"))))
 
 
 def install(
@@ -278,19 +386,28 @@ def install(
     2026-10-24: the deploy went out a minute after the upload, and the Studio's
     menu said "unsatisfiable."). So that one failure is retried for as long as
     the CDN can be behind, and reported in words if it outlasts that.
+
+    **Helper update and engine update are one command**: the helper at the
+    manifest's version, and -- when it pins one -- `gammonview` at its engine
+    version, refreshed the same way. `--with` is what makes the engine move:
+    the helper's own dependency is only a floor, and an existing install keeps
+    whatever it resolved first.
     """
     argv = [where.uv, "tool", "install", "--force", "--refresh-package", "gammonview-helper"]
     python = release.get("python") if where.python == "release" else where.python
     if isinstance(python, str) and python:
         argv += ["--python", python]
     argv.append(f"gammonview-helper=={release['version']}")
+    pin = engine_pin(release)
+    if pin is not None:
+        argv += ["--refresh-package", "gammonview", "--with", f"gammonview[engine]=={pin}"]
     for attempt in range(NOT_LISTED_TRIES):
         if attempt:
             sleep(NOT_LISTED_WAIT)
         done = run(argv, env=where.env, capture_output=True, text=True)
         if done.returncode == 0:
             return None
-        if not _not_listed(done.stderr or "", release["version"]):
+        if not _not_listed(done.stderr or "", release["version"], pin):
             lines = [line for line in (done.stderr or "").splitlines() if line.strip()]
             return lines[-1] if lines else f"uv exited with status {done.returncode}"
     return NOT_LISTED

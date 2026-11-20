@@ -200,6 +200,22 @@ def engine_version() -> str:
         return "unknown"
 
 
+def analysis_version() -> str | None:
+    """The `gammonview` version installed (the analysis engine's own package,
+    imported as `gvanalysis`), or None if it is not.
+
+    Distribution metadata, as with `engine_version`, so nothing is imported:
+    the menu asks this before an update and must not load the engine that the
+    update is about to replace.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("gammonview")
+    except PackageNotFoundError:  # pragma: no cover - installed without it
+        return None
+
+
 #: The feature word for running a preset handed over as a definition. The relay
 #: gives a job naming one of the account's own presets only to a helper that
 #: says this in its `hello`.

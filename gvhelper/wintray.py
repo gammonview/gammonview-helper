@@ -121,7 +121,7 @@ class HelperIcon:
                      visible=lambda _: self.control.state != "starting",
                      enabled=lambda _: link_enabled(self.control, self.linking)),
                 pystray.Menu.SEPARATOR,
-                Item(lambda _: f"Update to {offered(self.release)}…", self.on_update,
+                Item(lambda _: getattr(offered(self.release), "label", ""), self.on_update,
                      visible=lambda _: offered(self.release) is not None,
                      enabled=lambda _: self.control.state != "busy"),
                 Item("About GammonView Helper", self.on_about),
@@ -256,19 +256,19 @@ class HelperIcon:
         later(self.update)
 
     def update(self) -> None:
-        version = offered(self.release)
-        if version is None:
+        offer = offered(self.release)
+        if offer is None:
             return
         root = winapp.install_root()
         if root is None:
             winapp.tell((
-                f"GammonView Helper {version} is available",
+                offer.available,
                 "This copy was not installed by the GammonView installer. Quit "
                 "it, then run `gammonview-helper update` in a terminal.",
             ))
             return
         if not self.ask(
-            f"Update GammonView Helper to {version}?",
+            offer.question,
             "It takes a minute or two. The helper's icon goes away while it "
             "updates, and comes back when it is done.",
         ):
@@ -281,7 +281,9 @@ class HelperIcon:
                 "Choose Update again once it has finished.",
             ))
             return
-        if not winapp.start_update(root, version, (self.release or {}).get("python")):
+        if not winapp.start_update(
+            root, offer.version, (self.release or {}).get("python"), offer.engine,
+        ):
             winapp.tell((
                 "The update did not start",
                 "To update, download the installer from gammonview.com, open it, "
